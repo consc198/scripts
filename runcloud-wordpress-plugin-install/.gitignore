@@ -1,0 +1,4 @@
+runcloud-plugin-install.json
+.env
+__pycache__/
+*.pyc
