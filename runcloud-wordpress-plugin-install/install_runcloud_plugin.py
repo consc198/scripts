@@ -119,6 +119,7 @@ def install_plugin(server, webapp, webapp_user, dry_run):
 def main():
     parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a remote plugin ZIP via root SSH.")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
+    parser.add_argument("--server", help="RunCloud server ID or exact server name. Omit to process all servers.")
     parser.add_argument("--token", default=os.getenv("RUNCloud_API_TOKEN"))
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
@@ -133,7 +134,24 @@ def main():
         print(f"RunCloud API error: {exc}")
         sys.exit(1)
 
-    print(f"Found {len(servers)} server(s).")
+    if args.server:
+        matches = [
+            server for server in servers
+            if str(server.get("id")) == str(args.server)
+            or server.get("name") == args.server
+        ]
+        if not matches:
+            print(f"No RunCloud server matched: {args.server}")
+            print("Available servers:")
+            for server in servers:
+                print(f"  {server.get('id')} - {server.get('name', 'unnamed')}")
+            sys.exit(1)
+        servers = matches
+        print(f"Selected server: {servers[0].get('name', servers[0].get('id'))}")
+    else:
+        print("Selected: all servers")
+
+    print(f"Processing {len(servers)} server(s).")
     results = []
     wordpress_count = 0
 
@@ -183,7 +201,7 @@ def main():
     print("\n" + "=" * 72)
     print("RUNCloud WORDPRESS PLUGIN INSTALLATION REPORT")
     print("=" * 72)
-    print(f"Servers discovered:       {len(servers)}")
+    print(f"Servers processed:        {len(servers)}")
     print(f"WordPress sites found:    {wordpress_count}")
     print(f"Successful:               {successes}")
     print(f"Failed:                   {len(failures)}")
@@ -194,7 +212,7 @@ def main():
         print("-" * 72)
         for index, failure in enumerate(failures, 1):
             print(f"{index}. {failure.get('server', 'unknown server')} / {failure.get('webapp', 'unknown site')}")
-            print(f"   Reason: {failure.get('message', 'Unknown failure')}")
+            print(f"   Reason:    {failure.get('message', 'Unknown failure')}")
             if failure.get("rootPath"):
                 print(f"   Path:      {failure['rootPath']}")
             if failure.get("server_ip"):
