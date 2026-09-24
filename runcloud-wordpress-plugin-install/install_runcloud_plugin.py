@@ -67,7 +67,6 @@ def install_plugin(server, webapp, ssh_user, ssh_port, dry_run):
     if not root_path:
         return False, "No web-app rootPath"
 
-    # --force replaces an existing copy; --activate activates it after installation.
     command = (
         f"cd {shlex.quote(root_path)} && "
         f"wp plugin install {shlex.quote(PLUGIN_URL)} --force --activate"
@@ -84,9 +83,9 @@ def install_plugin(server, webapp, ssh_user, ssh_port, dry_run):
     if result.stdout:
         print(result.stdout.rstrip())
     if result.returncode != 0:
-        if result.stderr:
-            print(result.stderr.rstrip(), file=sys.stderr)
-        return False, f"exit code {result.returncode}"
+        error = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        print(f"  FAILED: {error}", file=sys.stderr)
+        return False, error
     return True, "installed and activated"
 
 
@@ -121,7 +120,7 @@ def main():
             webapps = get_all_pages(args.token, f"/servers/{server_id}/webapps")
         except Exception as exc:
             print(f"  ERROR listing web apps: {exc}")
-            results.append({"server_id": server_id, "server": server_name, "status": "webapp_discovery_failed", "error": str(exc)})
+            results.append({"server_id": server_id, "server": server_name, "status": "failed", "message": f"Web-app discovery failed: {exc}"})
             continue
 
         wordpress_apps = [app for app in webapps if app.get("type") == "wordpress"]
@@ -129,13 +128,13 @@ def main():
 
         for app in wordpress_apps:
             wordpress_count += 1
+            ssh_user = args.ssh_user
             try:
                 ssh_user = args.ssh_user or get_webapp_ssh_user(args.token, server_id, app)
                 ok, message = install_plugin(server, app, ssh_user, args.ssh_port, args.dry_run)
             except Exception as exc:
                 ok, message = False, str(exc)
-                ssh_user = args.ssh_user
-                print(f"  ERROR resolving/processing {app.get('name', app.get('id'))}: {exc}")
+                print(f"  FAILED: {message}", file=sys.stderr)
 
             results.append({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -153,12 +152,35 @@ def main():
 
     Path(args.output).write_text(json.dumps(results, indent=2), encoding="utf-8")
     successes = sum(r.get("status") == "success" for r in results)
-    failures = sum(r.get("status") == "failed" for r in results)
-    print("\n" + "=" * 60)
+    failures = [r for r in results if r.get("status") == "failed"]
+
+    print("\n" + "=" * 72)
+    print("RUNCloud WORDPRESS PLUGIN INSTALLATION REPORT")
+    print("=" * 72)
     print(f"Servers discovered:       {len(servers)}")
     print(f"WordPress sites found:    {wordpress_count}")
-    print("Mode:                     DRY RUN" if args.dry_run else f"Successful installations: {successes}\nFailed installations:     {failures}")
-    print(f"Results:                  {args.output}")
+    print(f"Successful:               {successes}")
+    print(f"Failed:                   {len(failures)}")
+    print(f"Results file:             {args.output}")
+
+    if failures:
+        print("\nFAILURES")
+        print("-" * 72)
+        for index, failure in enumerate(failures, 1):
+            server = failure.get("server", "unknown server")
+            webapp = failure.get("webapp", "unknown site")
+            reason = failure.get("message", "Unknown failure")
+            print(f"{index}. {server} / {webapp}")
+            print(f"   Reason: {reason}")
+            if failure.get("rootPath"):
+                print(f"   Path:   {failure['rootPath']}")
+            if failure.get("ssh_user"):
+                print(f"   SSH:    {failure['ssh_user']}@{failure.get('server_ip', 'unknown')}")
+    else:
+        print("\nNo failures. All discovered WordPress sites completed successfully.")
+
+    print("=" * 72)
+
     if failures:
         sys.exit(2)
 
