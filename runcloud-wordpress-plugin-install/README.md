@@ -82,7 +82,18 @@ After verifying the dry-run output:
 python3 install_runcloud_plugin.py
 ```
 
-Results are written to `runcloud-plugin-install.json`.
+At the end, the script prints a summary containing:
+
+- total servers discovered
+- total WordPress sites found
+- successful installations/activations
+- failed sites
+- the exact failure reason returned by RunCloud, SSH, or WP-CLI
+- the affected server, site, SSH user, and WordPress path when available
+
+A machine-readable JSON report is also written to `runcloud-plugin-install.json`.
+
+The script exits with code `2` if one or more sites fail, making failures detectable from automation or CI systems.
 
 ## Notes
 
