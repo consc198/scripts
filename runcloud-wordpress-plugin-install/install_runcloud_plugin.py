@@ -10,8 +10,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
-
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://conversal.be/admin-menu-editor-pro-2.37.zip"
 SSH_PORT = 22
@@ -19,10 +17,34 @@ SSH_USER = "root"
 
 
 def api_get(token, path, params=None):
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json", "Content-Type": "application/json"}
-    response = requests.get(f"{RUN_CLOUD_API}{path}", headers=headers, params=params, timeout=30)
-    response.raise_for_status()
-    return response.json()
+    """Call the RunCloud API using the system curl client."""
+    url = f"{RUN_CLOUD_API}{path}"
+    cmd = [
+        "curl", "--silent", "--show-error", "--fail-with-body",
+        "--max-time", "30",
+        "-H", f"Authorization: Bearer {token}",
+        "-H", "Accept: application/json",
+        "-H", "Content-Type: application/json",
+    ]
+
+    if params:
+        query = "&".join(
+            f"{shlex.quote(str(k))}={shlex.quote(str(v))}"
+            for k, v in params.items()
+        )
+        url = f"{url}?{query}"
+
+    cmd.append(url)
+    result = subprocess.run(cmd, text=True, capture_output=True)
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"curl exit code {result.returncode}"
+        raise RuntimeError(f"RunCloud API request failed: {detail}")
+
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"RunCloud API returned invalid JSON: {result.stdout[:500]}") from exc
 
 
 def get_all_pages(token, path):
@@ -70,7 +92,6 @@ def install_plugin(server, webapp, webapp_user, dry_run):
     if not root_path:
         return False, "No web-app rootPath"
 
-    # Root SSH is used only for transport. WP-CLI runs as the web-app's Linux user.
     inner_command = (
         f"cd {shlex.quote(root_path)} && "
         f"wp plugin install {shlex.quote(PLUGIN_URL)} --force --activate"
