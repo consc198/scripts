@@ -14,6 +14,7 @@ import requests
 
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://conversal.be/admin-menu-editor-pro-2.37.zip"
+SSH_PORT = 22
 
 
 def api_get(token, path, params=None):
@@ -52,14 +53,14 @@ def get_webapp_ssh_user(token, server_id, webapp):
     return username
 
 
-def ssh_run(host, user, command, port=22):
+def ssh_run(host, user, command):
     return subprocess.run([
-        "ssh", "-p", str(port), "-o", "BatchMode=yes",
+        "ssh", "-p", str(SSH_PORT), "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=15", f"{user}@{host}", command
     ], text=True, capture_output=True)
 
 
-def install_plugin(server, webapp, ssh_user, ssh_port, dry_run):
+def install_plugin(server, webapp, ssh_user, dry_run):
     host = server.get("ipAddress")
     root_path = webapp.get("rootPath")
     if not host:
@@ -75,11 +76,11 @@ def install_plugin(server, webapp, ssh_user, ssh_port, dry_run):
     webapp_name = webapp.get("name", f"webapp-{webapp['id']}")
 
     if dry_run:
-        print(f"[DRY-RUN] {server_name} / {webapp_name}\n          SSH: {ssh_user}@{host}:{ssh_port}\n          Path: {root_path}\n          CMD:  {command}")
+        print(f"[DRY-RUN] {server_name} / {webapp_name}\n          SSH: {ssh_user}@{host}:{SSH_PORT}\n          Path: {root_path}\n          CMD:  {command}")
         return True, "dry-run"
 
     print(f"[INSTALL+ACTIVATE] {server_name} / {webapp_name} ({host}) as {ssh_user} -> {root_path}")
-    result = ssh_run(host, ssh_user, command, ssh_port)
+    result = ssh_run(host, ssh_user, command)
     if result.stdout:
         print(result.stdout.rstrip())
     if result.returncode != 0:
@@ -93,7 +94,6 @@ def main():
     parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a remote plugin ZIP.")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
     parser.add_argument("--ssh-user", default=os.getenv("RC_SSH_USER"), help="Optional SSH override. If omitted, resolve each web app's RunCloud system user automatically.")
-    parser.add_argument("--ssh-port", type=int, default=int(os.getenv("RC_SSH_PORT", "22")))
     parser.add_argument("--token", default=os.getenv("RUNCloud_API_TOKEN"))
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
@@ -131,7 +131,7 @@ def main():
             ssh_user = args.ssh_user
             try:
                 ssh_user = args.ssh_user or get_webapp_ssh_user(args.token, server_id, app)
-                ok, message = install_plugin(server, app, ssh_user, args.ssh_port, args.dry_run)
+                ok, message = install_plugin(server, app, ssh_user, args.dry_run)
             except Exception as exc:
                 ok, message = False, str(exc)
                 print(f"  FAILED: {message}", file=sys.stderr)
@@ -167,11 +167,8 @@ def main():
         print("\nFAILURES")
         print("-" * 72)
         for index, failure in enumerate(failures, 1):
-            server = failure.get("server", "unknown server")
-            webapp = failure.get("webapp", "unknown site")
-            reason = failure.get("message", "Unknown failure")
-            print(f"{index}. {server} / {webapp}")
-            print(f"   Reason: {reason}")
+            print(f"{index}. {failure.get('server', 'unknown server')} / {failure.get('webapp', 'unknown site')}")
+            print(f"   Reason: {failure.get('message', 'Unknown failure')}")
             if failure.get("rootPath"):
                 print(f"   Path:   {failure['rootPath']}")
             if failure.get("ssh_user"):
