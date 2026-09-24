@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Discover WordPress apps in RunCloud and force-install a plugin ZIP via SSH/WP-CLI."""
+"""Discover WordPress apps in RunCloud and force-install + activate a plugin ZIP via SSH/WP-CLI."""
 
 import argparse
 import json
@@ -45,7 +45,6 @@ def get_webapp_ssh_user(token, server_id, webapp):
     user_id = webapp.get("server_user_id")
     if user_id is None:
         raise RuntimeError(f"Web app {webapp.get('name', webapp.get('id'))} has no server_user_id")
-
     user = api_get(token, f"/servers/{server_id}/users/{user_id}")
     username = user.get("username")
     if not username:
@@ -68,7 +67,11 @@ def install_plugin(server, webapp, ssh_user, ssh_port, dry_run):
     if not root_path:
         return False, "No web-app rootPath"
 
-    command = f"cd {shlex.quote(root_path)} && wp plugin install {shlex.quote(PLUGIN_URL)} --force"
+    # --force replaces an existing copy; --activate activates it after installation.
+    command = (
+        f"cd {shlex.quote(root_path)} && "
+        f"wp plugin install {shlex.quote(PLUGIN_URL)} --force --activate"
+    )
     server_name = server.get("name", f"server-{server['id']}")
     webapp_name = webapp.get("name", f"webapp-{webapp['id']}")
 
@@ -76,7 +79,7 @@ def install_plugin(server, webapp, ssh_user, ssh_port, dry_run):
         print(f"[DRY-RUN] {server_name} / {webapp_name}\n          SSH: {ssh_user}@{host}:{ssh_port}\n          Path: {root_path}\n          CMD:  {command}")
         return True, "dry-run"
 
-    print(f"[INSTALL] {server_name} / {webapp_name} ({host}) as {ssh_user} -> {root_path}")
+    print(f"[INSTALL+ACTIVATE] {server_name} / {webapp_name} ({host}) as {ssh_user} -> {root_path}")
     result = ssh_run(host, ssh_user, command, ssh_port)
     if result.stdout:
         print(result.stdout.rstrip())
@@ -84,11 +87,11 @@ def install_plugin(server, webapp, ssh_user, ssh_port, dry_run):
         if result.stderr:
             print(result.stderr.rstrip(), file=sys.stderr)
         return False, f"exit code {result.returncode}"
-    return True, "installed"
+    return True, "installed and activated"
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install a remote plugin ZIP.")
+    parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a remote plugin ZIP.")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
     parser.add_argument("--ssh-user", default=os.getenv("RC_SSH_USER"), help="Optional SSH override. If omitted, resolve each web app's RunCloud system user automatically.")
     parser.add_argument("--ssh-port", type=int, default=int(os.getenv("RC_SSH_PORT", "22")))
