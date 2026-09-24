@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Discover WordPress apps in RunCloud and force-install + activate a plugin ZIP via SSH/WP-CLI."""
+"""Discover WordPress apps in RunCloud and force-install + activate a plugin ZIP via root SSH and sudo."""
 
 import argparse
 import json
@@ -15,6 +15,7 @@ import requests
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://conversal.be/admin-menu-editor-pro-2.37.zip"
 SSH_PORT = 22
+SSH_USER = "root"
 
 
 def api_get(token, path, params=None):
@@ -53,14 +54,15 @@ def get_webapp_ssh_user(token, server_id, webapp):
     return username
 
 
-def ssh_run(host, user, command):
+def ssh_run(host, command):
+    """Connect as root over SSH; the command itself switches to the web-app user."""
     return subprocess.run([
         "ssh", "-p", str(SSH_PORT), "-o", "BatchMode=yes",
-        "-o", "ConnectTimeout=15", f"{user}@{host}", command
+        "-o", "ConnectTimeout=15", f"{SSH_USER}@{host}", command
     ], text=True, capture_output=True)
 
 
-def install_plugin(server, webapp, ssh_user, dry_run):
+def install_plugin(server, webapp, webapp_user, dry_run):
     host = server.get("ipAddress")
     root_path = webapp.get("rootPath")
     if not host:
@@ -68,19 +70,22 @@ def install_plugin(server, webapp, ssh_user, dry_run):
     if not root_path:
         return False, "No web-app rootPath"
 
-    command = (
+    # Root SSH is used only for transport. WP-CLI runs as the web-app's Linux user.
+    inner_command = (
         f"cd {shlex.quote(root_path)} && "
         f"wp plugin install {shlex.quote(PLUGIN_URL)} --force --activate"
     )
+    command = f"sudo -u {shlex.quote(webapp_user)} -- sh -c {shlex.quote(inner_command)}"
+
     server_name = server.get("name", f"server-{server['id']}")
     webapp_name = webapp.get("name", f"webapp-{webapp['id']}")
 
     if dry_run:
-        print(f"[DRY-RUN] {server_name} / {webapp_name}\n          SSH: {ssh_user}@{host}:{SSH_PORT}\n          Path: {root_path}\n          CMD:  {command}")
+        print(f"[DRY-RUN] {server_name} / {webapp_name}\n          SSH: {SSH_USER}@{host}:{SSH_PORT}\n          Run as: {webapp_user}\n          Path: {root_path}\n          CMD:  {command}")
         return True, "dry-run"
 
-    print(f"[INSTALL+ACTIVATE] {server_name} / {webapp_name} ({host}) as {ssh_user} -> {root_path}")
-    result = ssh_run(host, ssh_user, command)
+    print(f"[INSTALL+ACTIVATE] {server_name} / {webapp_name} ({host}) via root -> {webapp_user} -> {root_path}")
+    result = ssh_run(host, command)
     if result.stdout:
         print(result.stdout.rstrip())
     if result.returncode != 0:
@@ -91,9 +96,8 @@ def install_plugin(server, webapp, ssh_user, dry_run):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a remote plugin ZIP.")
+    parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a remote plugin ZIP via root SSH.")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
-    parser.add_argument("--ssh-user", default=os.getenv("RC_SSH_USER"), help="Optional SSH override. If omitted, resolve each web app's RunCloud system user automatically.")
     parser.add_argument("--token", default=os.getenv("RUNCloud_API_TOKEN"))
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
@@ -128,10 +132,10 @@ def main():
 
         for app in wordpress_apps:
             wordpress_count += 1
-            ssh_user = args.ssh_user
+            webapp_user = None
             try:
-                ssh_user = args.ssh_user or get_webapp_ssh_user(args.token, server_id, app)
-                ok, message = install_plugin(server, app, ssh_user, args.dry_run)
+                webapp_user = get_webapp_ssh_user(args.token, server_id, app)
+                ok, message = install_plugin(server, app, webapp_user, args.dry_run)
             except Exception as exc:
                 ok, message = False, str(exc)
                 print(f"  FAILED: {message}", file=sys.stderr)
@@ -144,7 +148,8 @@ def main():
                 "webapp_id": app.get("id"),
                 "webapp": app.get("name"),
                 "server_user_id": app.get("server_user_id"),
-                "ssh_user": ssh_user,
+                "ssh_user": SSH_USER,
+                "run_as_user": webapp_user,
                 "rootPath": app.get("rootPath"),
                 "status": "success" if ok else "failed",
                 "message": message,
@@ -170,9 +175,11 @@ def main():
             print(f"{index}. {failure.get('server', 'unknown server')} / {failure.get('webapp', 'unknown site')}")
             print(f"   Reason: {failure.get('message', 'Unknown failure')}")
             if failure.get("rootPath"):
-                print(f"   Path:   {failure['rootPath']}")
-            if failure.get("ssh_user"):
-                print(f"   SSH:    {failure['ssh_user']}@{failure.get('server_ip', 'unknown')}")
+                print(f"   Path:      {failure['rootPath']}")
+            if failure.get("server_ip"):
+                print(f"   SSH:       {SSH_USER}@{failure['server_ip']}:{SSH_PORT}")
+            if failure.get("run_as_user"):
+                print(f"   Run as:    {failure['run_as_user']}")
     else:
         print("\nNo failures. All discovered WordPress sites completed successfully.")
 
