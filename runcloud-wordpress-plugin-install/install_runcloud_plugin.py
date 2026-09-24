@@ -40,6 +40,19 @@ def get_all_pages(token, path):
     return results
 
 
+def get_webapp_ssh_user(token, server_id, webapp):
+    """Resolve the RunCloud system-user username owning the web app."""
+    user_id = webapp.get("server_user_id")
+    if user_id is None:
+        raise RuntimeError(f"Web app {webapp.get('name', webapp.get('id'))} has no server_user_id")
+
+    user = api_get(token, f"/servers/{server_id}/users/{user_id}")
+    username = user.get("username")
+    if not username:
+        raise RuntimeError(f"RunCloud user {user_id} has no username")
+    return username
+
+
 def ssh_run(host, user, command, port=22):
     return subprocess.run([
         "ssh", "-p", str(port), "-o", "BatchMode=yes",
@@ -63,7 +76,7 @@ def install_plugin(server, webapp, ssh_user, ssh_port, dry_run):
         print(f"[DRY-RUN] {server_name} / {webapp_name}\n          SSH: {ssh_user}@{host}:{ssh_port}\n          Path: {root_path}\n          CMD:  {command}")
         return True, "dry-run"
 
-    print(f"[INSTALL] {server_name} / {webapp_name} ({host}) -> {root_path}")
+    print(f"[INSTALL] {server_name} / {webapp_name} ({host}) as {ssh_user} -> {root_path}")
     result = ssh_run(host, ssh_user, command, ssh_port)
     if result.stdout:
         print(result.stdout.rstrip())
@@ -77,7 +90,7 @@ def install_plugin(server, webapp, ssh_user, ssh_port, dry_run):
 def main():
     parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install a remote plugin ZIP.")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
-    parser.add_argument("--ssh-user", default=os.getenv("RC_SSH_USER"))
+    parser.add_argument("--ssh-user", default=os.getenv("RC_SSH_USER"), help="Optional SSH override. If omitted, resolve each web app's RunCloud system user automatically.")
     parser.add_argument("--ssh-port", type=int, default=int(os.getenv("RC_SSH_PORT", "22")))
     parser.add_argument("--token", default=os.getenv("RUNCloud_API_TOKEN"))
     parser.add_argument("--output", default="runcloud-plugin-install.json")
@@ -85,8 +98,6 @@ def main():
 
     if not args.token:
         parser.error("Set RUNCloud_API_TOKEN or use --token.")
-    if not args.ssh_user:
-        parser.error("Set RC_SSH_USER or use --ssh-user.")
 
     try:
         print(f"RunCloud API: {api_get(args.token, '/ping')}")
@@ -115,7 +126,14 @@ def main():
 
         for app in wordpress_apps:
             wordpress_count += 1
-            ok, message = install_plugin(server, app, args.ssh_user, args.ssh_port, args.dry_run)
+            try:
+                ssh_user = args.ssh_user or get_webapp_ssh_user(args.token, server_id, app)
+                ok, message = install_plugin(server, app, ssh_user, args.ssh_port, args.dry_run)
+            except Exception as exc:
+                ok, message = False, str(exc)
+                ssh_user = args.ssh_user
+                print(f"  ERROR resolving/processing {app.get('name', app.get('id'))}: {exc}")
+
             results.append({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "server_id": server_id,
@@ -123,6 +141,8 @@ def main():
                 "server_ip": server.get("ipAddress"),
                 "webapp_id": app.get("id"),
                 "webapp": app.get("name"),
+                "server_user_id": app.get("server_user_id"),
+                "ssh_user": ssh_user,
                 "rootPath": app.get("rootPath"),
                 "status": "success" if ok else "failed",
                 "message": message,
