@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-Discovers WordPress web applications through the RunCloud API and force-installs a plugin ZIP on each site using SSH and WP-CLI.
+Discovers WordPress web applications through the RunCloud API and force-installs and activates a plugin ZIP on each site using SSH and WP-CLI.
 
 ## What it does
 
@@ -14,10 +14,10 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 8. Runs:
 
 ```bash
-wp plugin install https://conversal.be/admin-menu-editor-pro-2.37.zip --force
+wp plugin install https://conversal.be/admin-menu-editor-pro-2.37.zip --force --activate
 ```
 
-The plugin is installed but **not activated automatically**.
+The plugin is installed and activated automatically.
 
 ## Requirements
 
@@ -42,7 +42,7 @@ Set the RunCloud API token:
 export RUNCloud_API_TOKEN='YOUR_RUNCLOUD_API_TOKEN'
 ```
 
-You no longer need to set `RC_SSH_USER` in the normal case. The script automatically resolves each WordPress web app's RunCloud system user from its `server_user_id`. RunCloud documents the web-app `server_user_id` field and the `/servers/{serverId}/users/{systemUserId}` endpoint that returns the corresponding username.
+You no longer need to set `RC_SSH_USER` in the normal case. The script automatically resolves each WordPress web app's RunCloud system user from its `server_user_id`.
 
 If you want to override automatic detection for testing or a special SSH setup, you can still use:
 
@@ -88,7 +88,7 @@ Results are written to `runcloud-plugin-install.json`.
 
 - The script continues after individual site failures.
 - Existing plugin installations are overwritten because `--force` is used.
-- The script does not activate the plugin.
+- The plugin is activated automatically after installation.
 - SSH key authentication is recommended.
 - The automatically detected username is the RunCloud system user associated with each web app; it is not guessed from the domain name or filesystem path.
 - Review the ZIP source and permissions before running against production sites.
