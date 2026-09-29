@@ -26,16 +26,43 @@
 #
 # RUN
 # ---
-#   ./dns-discovery.sh gunterbroodcoorens.com studio4.be ondernemersvlaanderen.be
+# Pass one or more domains as arguments:
+#
+#   ./dns-discovery.sh example.com example.org
 #
 # Output:
 #   <domain>-cloudflare.txt
 #
-# IMPORTANT
-# ---------
-# DNS cannot reliably enumerate every possible subdomain. This script uses a
-# targeted list of common names. Authentication and mail records below mg/mgn
-# are queried explicitly.
+# WHAT IS QUERIED
+# ---------------
+# The script explicitly checks common web/mail names, including:
+#   - apex, www, mail, smtp, imap, pop, mg, mgn, autodiscover, autoconfig
+#   - _dmarc
+#   - s1._domainkey, s2._domainkey, selector1._domainkey, selector2._domainkey
+#   - the corresponding DKIM/DMARC names below mg and mgn
+#   - email CNAME records below mg and mgn
+#   - common mail SRV records such as _imaps._tcp, _pop3s._tcp,
+#     _submission._tcp and _autodiscover._tcp, including mg/mgn variants
+#
+# Record types queried:
+#   A AAAA CNAME MX TXT CAA SRV NS
+#
+# IMPORTANT LIMITATION
+# --------------------
+# DNS does not provide a standard, reliable way to enumerate every possible
+# subdomain. This script therefore queries a targeted list of known/common
+# names. Add additional names to COMMON_NAMES, NESTED_AUTH_NAMES,
+# NESTED_MAIL_NAMES or SRV_NAMES below if required.
+#
+# CLOUDFLARE IMPORT NOTES
+# -----------------------
+# The generated files use BIND zone-file syntax. Apex NS records are omitted
+# because Cloudflare assigns its authoritative nameservers when a zone is
+# activated. DNSSEC records are not queried; manage DNSSEC in Cloudflare
+# separately after the zone is migrated.
+#
+# Before importing, review the generated files, especially MX, TXT/SPF, DKIM,
+# DMARC, CAA and SRV records.
 #
 # ============================================================================
 
@@ -67,8 +94,6 @@ NESTED_AUTH_NAMES=(
   "_dmarc.mg" "_dmarc.mgn"
 )
 
-# Known mail CNAME names below mg/mgn. These are queried explicitly because
-# ordinary host discovery does not infer arbitrary names such as email.mg.
 NESTED_MAIL_NAMES=(
   "email.mg"
   "email.mgn"
