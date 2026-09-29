@@ -21,51 +21,22 @@
 #
 # INSTALL / DOWNLOAD
 # ------------------
-# Download the latest version from GitHub:
-#
 #   curl -fsSL https://raw.githubusercontent.com/consc198/scripts/main/dns-discovery.sh -o dns-discovery.sh
 #   chmod +x dns-discovery.sh
 #
 # RUN
 # ---
-# Pass one or more domains as arguments:
-#
 #   ./dns-discovery.sh gunterbroodcoorens.com studio4.be ondernemersvlaanderen.be
 #
-# The script creates one Cloudflare-ready BIND zone file per domain:
+# Output:
+#   <domain>-cloudflare.txt
 #
-#   gunterbroodcoorens.com-cloudflare.txt
-#   studio4.be-cloudflare.txt
-#   ondernemersvlaanderen.be-cloudflare.txt
-#
-# WHAT IS QUERIED
-# ---------------
-# The script explicitly checks common web/mail names, including:
-#   - apex, www, mail, smtp, imap, pop, mg, mgn, autodiscover, autoconfig
-#   - _dmarc
-#   - s1._domainkey, s2._domainkey, selector1._domainkey, selector2._domainkey
-#   - the corresponding DKIM/DMARC names below mg and mgn
-#   - common mail SRV records such as _imaps._tcp, _pop3s._tcp,
-#     _submission._tcp and _autodiscover._tcp, including mg/mgn variants
-#
-# Record types queried:
-#   A AAAA CNAME MX TXT CAA SRV NS
-#
-# IMPORTANT LIMITATION
-# --------------------
-# DNS does not provide a standard, reliable way to enumerate every possible
-# subdomain. This script therefore queries a targeted list of known/common
-# names. Add additional names to COMMON_NAMES or SRV_NAMES below if required.
-#
-# CLOUDFLARE IMPORT NOTES
-# -----------------------
-# The generated files use BIND zone-file syntax. Apex NS records are omitted
-# because Cloudflare assigns its authoritative nameservers when a zone is
-# activated. DNSSEC records are not queried; enable/manage DNSSEC in Cloudflare
-# separately after the zone is migrated.
-#
-# Before importing, review the generated files, especially MX, TXT/SPF, DKIM,
-# DMARC, CAA and SRV records.
+# IMPORTANT
+# ---------
+# DNS cannot reliably enumerate every possible subdomain. This script uses a
+# targeted list of common names. For DKIM/DMARC below mg/mgn, the exact names
+# are queried directly from authoritative DNS servers as an extra verification
+# step. This avoids missing records because of a local/caching resolver.
 #
 # ============================================================================
 
@@ -87,8 +58,22 @@ COMMON_NAMES=(
   "mta" "mx" "dkim" "_domainkey"
   "s1._domainkey" "s2._domainkey" "selector1._domainkey" "selector2._domainkey"
   "_dmarc"
-  "s1._domainkey.mg" "s2._domainkey.mg" "selector1._domainkey.mg" "selector2._domainkey.mg" "_dmarc.mg"
-  "s1._domainkey.mgn" "s2._domainkey.mgn" "selector1._domainkey.mgn" "selector2._domainkey.mgn" "_dmarc.mgn"
+)
+
+# These are the exact nested names that must be checked. They are deliberately
+# separate from COMMON_NAMES so there is no ambiguity about how the labels are
+# assembled.
+NESTED_AUTH_NAMES=(
+  "s1._domainkey.mg"
+  "s1._domainkey.mgn"
+  "s2._domainkey.mg"
+  "s2._domainkey.mgn"
+  "selector1._domainkey.mg"
+  "selector1._domainkey.mgn"
+  "selector2._domainkey.mg"
+  "selector2._domainkey.mgn"
+  "_dmarc.mg"
+  "_dmarc.mgn"
 )
 
 SRV_NAMES=(
@@ -112,8 +97,34 @@ SRV_NAMES=(
 
 TYPES=(A AAAA CNAME MX TXT CAA SRV NS)
 
+# Query a name using the system resolver.
+query_normal() {
+  local fqdn="$1" type="$2"
+  dig +noall +answer "$fqdn" "$type" 2>/dev/null || true
+}
+
+# Query an exact name against the authoritative nameservers for its closest
+# available zone. This is particularly important for delegated mg/mgn zones.
+query_authoritative() {
+  local fqdn="$1" type="$2" zone="$3"
+  local ns
+
+  # First try nameservers for the possible delegated zone itself.
+  for ns in $(dig +short NS "$zone" 2>/dev/null | sed 's/[[:space:]]//g'); do
+    [ -z "$ns" ] && continue
+    dig +noall +answer +time=3 +tries=1 "@$ns" "$fqdn" "$type" 2>/dev/null || true
+  done
+
+  # Also query the parent domain's authoritative nameservers.
+  for ns in $(dig +short NS "$DOMAIN_ROOT" 2>/dev/null | sed 's/[[:space:]]//g'); do
+    [ -z "$ns" ] && continue
+    dig +noall +answer +time=3 +tries=1 "@$ns" "$fqdn" "$type" 2>/dev/null || true
+  done
+}
+
 for domain_arg in "$@"; do
   domain="${domain_arg%.}"
+  DOMAIN_ROOT="$domain."
   outfile="${domain}-cloudflare.txt"
   tmp="${outfile}.tmp"
 
@@ -123,13 +134,15 @@ for domain_arg in "$@"; do
     echo "; Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo ";"
     echo "; Records are copied directly from dig output."
-    echo "; DNSSEC records are not queried. Apex NS is omitted for normal Cloudflare"
-    echo "; full-zone setup because Cloudflare supplies authoritative nameservers."
+    echo "; Nested DKIM/DMARC names under mg/mgn are also queried directly against"
+    echo "; authoritative DNS servers."
+    echo "; DNSSEC records are not queried. Apex NS is omitted."
     echo
     printf '%s\n' '$ORIGIN '"${domain}."
     printf '%s\n' '$TTL 3600'
     echo
 
+    # Standard/common records.
     for name in "${COMMON_NAMES[@]}"; do
       if [ -n "$name" ]; then fqdn="${name}.${domain}."; else fqdn="${domain}."; fi
       for type in "${TYPES[@]}"; do
@@ -137,16 +150,45 @@ for domain_arg in "$@"; do
           [ -z "$line" ] && continue
           if [ "$fqdn" = "${domain}." ] && [ "$type" = "NS" ]; then continue; fi
           printf '%s\n' "$line"
-        done < <(dig +noall +answer "$fqdn" "$type" 2>/dev/null)
+        done < <(query_normal "$fqdn" "$type")
       done
     done
 
+    # Explicit nested DKIM/DMARC verification. Query TXT first (the expected
+    # record type), then CNAME/A/AAAA in case the provider uses indirection.
+    for name in "${NESTED_AUTH_NAMES[@]}"; do
+      fqdn="${name}.${domain}."
+      echo "; Explicit authentication check: ${fqdn}"
+
+      # Normal resolver first.
+      for type in TXT CNAME A AAAA; do
+        while IFS= read -r line; do
+          [ -z "$line" ] && continue
+          printf '%s\n' "$line"
+        done < <(query_normal "$fqdn" "$type")
+      done
+
+      # Then authoritative servers for the delegated mg/mgn zone and root.
+      case "$name" in
+        *.mg) zone="mg.${domain}." ;;
+        *.mgn) zone="mgn.${domain}." ;;
+        *) zone="${domain}." ;;
+      esac
+      for type in TXT CNAME A AAAA; do
+        while IFS= read -r line; do
+          [ -z "$line" ] && continue
+          printf '%s\n' "$line"
+        done < <(query_authoritative "$fqdn" "$type" "$zone")
+      done
+    done
+
+    # Explicit SRV service names.
     for name in "${SRV_NAMES[@]}"; do
       fqdn="${name}.${domain}."
       while IFS= read -r line; do
         [ -z "$line" ] && continue
         printf '%s\n' "$line"
-      done < <(dig +noall +answer "$fqdn" SRV 2>/dev/null)
+      done < <(query_normal "$fqdn" SRV)
     done
   } > "$tmp"
 
