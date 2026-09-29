@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Query selected DNS names and produce Cloudflare-importable BIND zone files.
+# Query selected DNS names and produce BIND zone files suitable for
+# Cloudflare's DNS Import feature.
 # Usage: ./dns-discovery.sh domain1 domain2 domain3
 # Output: <domain>-cloudflare.txt
 set -euo pipefail
@@ -20,19 +21,25 @@ COMMON_NAMES=(
   "mta" "mx" "_dmarc" "_domainkey" "selector1._domainkey"
   "selector2._domainkey" "dkim"
 )
-TYPES=(A AAAA CNAME MX TXT CAA SRV)
+TYPES=(A AAAA CNAME MX TXT CAA SRV NS)
 
 for domain_arg in "$@"; do
   domain="${domain_arg%.}"
   outfile="${domain}-cloudflare.txt"
+  tmp="${outfile}.tmp"
 
   {
-    echo "; Cloudflare BIND zone import for ${domain}"
+    echo "; Cloudflare DNS Import / BIND zone file"
+    echo "; Domain: ${domain}"
     echo "; Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo ";"
-    echo "; SOA, authoritative NS and DNSSEC records are omitted because Cloudflare"
-    echo "; manages those when the zone is activated."
-    echo "; This is a targeted discovery list; DNS cannot enumerate arbitrary names."
+    echo "; Records are copied directly from dig output. This preserves TXT, CAA,"
+    echo "; MX, SRV and other RDATA without lossy shell parsing."
+    echo "; DNSSEC records are not queried. Apex NS is omitted for normal Cloudflare"
+    echo "; full-zone setup because Cloudflare supplies the authoritative NS records."
+    echo ";"
+    echo "; DNS has no standard way to enumerate arbitrary subdomains. This file"
+    echo "; contains the apex and the explicit names in COMMON_NAMES, including mg/mgn."
     echo
     printf '%s\n' '$ORIGIN '"${domain}."
     printf '%s\n' '$TTL 3600'
@@ -46,43 +53,22 @@ for domain_arg in "$@"; do
       fi
 
       for type in "${TYPES[@]}"; do
-        # Ask the resolver for exactly this name/type. +short gives clean RDATA.
-        # A separate +answer query supplies the TTL for each answer.
         while IFS= read -r line; do
           [ -z "$line" ] && continue
-          ttl=$(awk '{print $2}' <<< "$line")
-          rdata=$(cut -d' ' -f5- <<< "$line")
-          case "$type" in
-            A|AAAA)
-              printf '%s %s IN %s %s\n' "$fqdn" "$ttl" "$type" "$rdata"
-              ;;
-            CNAME)
-              target="$rdata"; [[ "$target" == *. ]] || target="${target}."
-              printf '%s %s IN CNAME %s\n' "$fqdn" "$ttl" "$target"
-              ;;
-            MX)
-              pref=$(awk '{print $1}' <<< "$rdata")
-              target=$(awk '{print $2}' <<< "$rdata")
-              [[ "$target" == *. ]] || target="${target}."
-              printf '%s %s IN MX %s %s\n' "$fqdn" "$ttl" "$pref" "$target"
-              ;;
-            SRV)
-              priority=$(awk '{print $1}' <<< "$rdata")
-              weight=$(awk '{print $2}' <<< "$rdata")
-              port=$(awk '{print $3}' <<< "$rdata")
-              target=$(awk '{print $4}' <<< "$rdata")
-              [[ "$target" == *. ]] || target="${target}."
-              printf '%s %s IN SRV %s %s %s %s\n' "$fqdn" "$ttl" "$priority" "$weight" "$port" "$target"
-              ;;
-            TXT|CAA)
-              # Preserve quoted TXT/CAA RDATA exactly as returned by dig.
-              printf '%s %s IN %s %s\n' "$fqdn" "$ttl" "$type" "$rdata"
-              ;;
-          esac
+          if [ "$fqdn" = "${domain}." ] && [ "$type" = "NS" ]; then
+            continue
+          fi
+          printf '%s\n' "$line"
         done < <(dig +noall +answer "$fqdn" "$type" 2>/dev/null)
       done
     done
-  } | awk '!seen[$0]++' > "$outfile"
+  } > "$tmp"
+
+  awk '
+    /^;/ || /^\$ORIGIN/ || /^\$TTL/ { print; next }
+    !seen[$0]++ { print }
+  ' "$tmp" > "$outfile"
+  rm -f "$tmp"
 
   echo "Wrote $outfile"
 done
