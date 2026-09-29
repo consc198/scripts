@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Discover commonly used DNS records for one or more domains.
+# Discover DNS records for one or more domains.
 # Usage: ./dns-discovery.sh domain1 domain2 domain3
 # Output: <domain>-discovered.txt for each domain.
 set -euo pipefail
@@ -14,9 +14,9 @@ if [ "$#" -lt 1 ]; then
   exit 2
 fi
 
-# Common hostnames and mail-authentication names. DNS cannot enumerate every
-# possible subdomain, so this is a targeted discovery pass plus an apex ANY query.
-# mg and mgn are included explicitly because they are used by the target domains.
+# Explicitly query the important subdomains, including mg and mgn.
+# DNS does not provide a standard way to enumerate every possible subdomain,
+# so this is a targeted discovery pass. Add names to COMMON_NAMES as needed.
 COMMON_NAMES=(
   ""
   "www"
@@ -32,19 +32,18 @@ COMMON_NAMES=(
   "webmail"
   "cpanel"
   "calendar"
+  "mta"
+  "mx"
   "_dmarc"
   "_domainkey"
   "selector1._domainkey"
   "selector2._domainkey"
   "dkim"
-  "mta"
-  "mx"
 )
 
 TYPES=(A AAAA CNAME MX TXT CAA SRV NS)
 
 for domain in "$@"; do
-  # Strip a trailing dot so generated filenames remain sensible.
   domain="${domain%.}"
   outfile="${domain}-discovered.txt"
 
@@ -53,13 +52,9 @@ for domain in "$@"; do
     echo "; Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo "; Requires: dig"
     echo ";"
-    echo "; NOTE: DNS has no general-purpose subdomain enumeration mechanism."
-    echo "; This script queries the apex with ANY and a set of common website,"
-    echo "; mail, and authentication names, including mg and mgn. Empty answers are omitted."
-    echo
-
-    echo "===== ${domain} ANY ====="
-    dig +noall +answer "$domain" ANY || true
+    echo "; This script explicitly queries mg and mgn for every supplied domain."
+    echo "; Empty DNS answers are retained as headings so it is clear that the"
+    echo "; name was checked. DNS cannot enumerate arbitrary subdomains by itself."
     echo
 
     for name in "${COMMON_NAMES[@]}"; do
@@ -69,8 +64,10 @@ for domain in "$@"; do
         fqdn="$domain"
       fi
 
+      echo "===== ${fqdn} ====="
       for type in "${TYPES[@]}"; do
         echo "### ${fqdn} ${type}"
+        # Query the name directly. +noall +answer avoids misleading ANY output.
         dig +noall +answer "$fqdn" "$type" || true
         echo
       done
