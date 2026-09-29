@@ -1,8 +1,74 @@
 #!/usr/bin/env bash
-# Query selected DNS names and produce BIND zone files suitable for
+# ==============================================================================
+# DNS Discovery -> Cloudflare BIND Zone Import
+# ==============================================================================
+#
+# PURPOSE
+# -------
+# Query selected DNS names and produce BIND-format zone files suitable for
 # Cloudflare's DNS Import feature.
-# Usage: ./dns-discovery.sh domain1 domain2 domain3
-# Output: <domain>-cloudflare.txt
+#
+# REQUIREMENTS
+# ------------
+# - Linux/macOS/WSL or another POSIX shell environment
+# - The `dig` command
+#
+# Ubuntu/Debian:
+#   sudo apt update && sudo apt install -y dnsutils
+#
+# RHEL/CentOS/Fedora:
+#   sudo dnf install -y bind-utils
+#
+# INSTALL / DOWNLOAD
+# ------------------
+# Download the latest version from GitHub:
+#
+#   curl -fsSL https://raw.githubusercontent.com/consc198/scripts/main/dns-discovery.sh -o dns-discovery.sh
+#   chmod +x dns-discovery.sh
+#
+# RUN
+# ---
+# Pass one or more domains as arguments:
+#
+#   ./dns-discovery.sh gunterbroodcoorens.com studio4.be ondernemersvlaanderen.be
+#
+# The script creates one Cloudflare-ready BIND zone file per domain:
+#
+#   gunterbroodcoorens.com-cloudflare.txt
+#   studio4.be-cloudflare.txt
+#   ondernemersvlaanderen.be-cloudflare.txt
+#
+# WHAT IS QUERIED
+# ---------------
+# The script explicitly checks common web/mail names, including:
+#   - apex, www, mail, smtp, imap, pop, mg, mgn, autodiscover, autoconfig
+#   - _dmarc
+#   - s1._domainkey, s2._domainkey, selector1._domainkey, selector2._domainkey
+#   - the corresponding DKIM/DMARC names below mg and mgn
+#   - common mail SRV records such as _imaps._tcp, _pop3s._tcp,
+#     _submission._tcp and _autodiscover._tcp, including mg/mgn variants
+#
+# Record types queried:
+#   A AAAA CNAME MX TXT CAA SRV NS
+#
+# IMPORTANT LIMITATION
+# --------------------
+# DNS does not provide a standard, reliable way to enumerate every possible
+# subdomain. This script therefore queries a targeted list of known/common
+# names. Add additional names to COMMON_NAMES or SRV_NAMES below if required.
+#
+# CLOUDFLARE IMPORT NOTES
+# -----------------------
+# The generated files use BIND zone-file syntax. Apex NS records are omitted
+# because Cloudflare assigns its authoritative nameservers when a zone is
+# activated. DNSSEC records are not queried; enable/manage DNSSEC in Cloudflare
+# separately after the zone is migrated.
+#
+# Before importing, review the generated files, especially MX, TXT/SPF, DKIM,
+# DMARC, CAA and SRV records.
+#
+# ============================================================================
+
 set -euo pipefail
 
 if ! command -v dig >/dev/null 2>&1; then
@@ -25,8 +91,6 @@ COMMON_NAMES=(
   "s1._domainkey.mgn" "s2._domainkey.mgn" "selector1._domainkey.mgn" "selector2._domainkey.mgn" "_dmarc.mgn"
 )
 
-# SRV records use service labels rather than ordinary hostnames, so they need
-# explicit queries. The names below cover common mail/autodiscover services.
 SRV_NAMES=(
   "_imaps._tcp"
   "_pop3s._tcp"
@@ -59,7 +123,6 @@ for domain_arg in "$@"; do
     echo "; Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo ";"
     echo "; Records are copied directly from dig output."
-    echo "; Explicitly checks DKIM/DMARC names and common mail SRV labels."
     echo "; DNSSEC records are not queried. Apex NS is omitted for normal Cloudflare"
     echo "; full-zone setup because Cloudflare supplies authoritative nameservers."
     echo
@@ -78,8 +141,6 @@ for domain_arg in "$@"; do
       done
     done
 
-    # Explicit SRV service names. These are not discovered by querying
-    # ordinary hostnames such as mail.example.com.
     for name in "${SRV_NAMES[@]}"; do
       fqdn="${name}.${domain}."
       while IFS= read -r line; do
