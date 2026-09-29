@@ -15,11 +15,14 @@ if [ "$#" -lt 1 ]; then
   exit 2
 fi
 
+# Known names to check. In particular, s1._domainkey and _dmarc are queried
+# explicitly as TXT records. Other common names are retained for migration.
 COMMON_NAMES=(
   "" "www" "mg" "mgn" "mail" "smtp" "imap" "pop"
   "autodiscover" "autoconfig" "ftp" "webmail" "cpanel" "calendar"
-  "mta" "mx" "_dmarc" "_domainkey" "selector1._domainkey"
-  "selector2._domainkey" "dkim"
+  "mta" "mx" "dkim" "_domainkey"
+  "s1._domainkey" "s2._domainkey" "selector1._domainkey" "selector2._domainkey"
+  "_dmarc"
 )
 TYPES=(A AAAA CNAME MX TXT CAA SRV NS)
 
@@ -33,13 +36,13 @@ for domain_arg in "$@"; do
     echo "; Domain: ${domain}"
     echo "; Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo ";"
-    echo "; Records are copied directly from dig output. This preserves TXT, CAA,"
-    echo "; MX, SRV and other RDATA without lossy shell parsing."
+    echo "; Records are copied directly from dig output."
+    echo "; s1._domainkey.${domain}. and _dmarc.${domain}. are explicitly queried."
     echo "; DNSSEC records are not queried. Apex NS is omitted for normal Cloudflare"
     echo "; full-zone setup because Cloudflare supplies the authoritative NS records."
     echo ";"
     echo "; DNS has no standard way to enumerate arbitrary subdomains. This file"
-    echo "; contains the apex and the explicit names in COMMON_NAMES, including mg/mgn."
+    echo "; contains the apex and the explicit names in COMMON_NAMES."
     echo
     printf '%s\n' '$ORIGIN '"${domain}."
     printf '%s\n' '$TTL 3600'
