@@ -16,9 +16,12 @@ fi
 
 # Common hostnames and mail-authentication names. DNS cannot enumerate every
 # possible subdomain, so this is a targeted discovery pass plus an apex ANY query.
+# mg and mgn are included explicitly because they are used by the target domains.
 COMMON_NAMES=(
   ""
   "www"
+  "mg"
+  "mgn"
   "mail"
   "smtp"
   "imap"
@@ -52,7 +55,7 @@ for domain in "$@"; do
     echo ";"
     echo "; NOTE: DNS has no general-purpose subdomain enumeration mechanism."
     echo "; This script queries the apex with ANY and a set of common website,"
-    echo "; mail, and authentication names. Empty answers are omitted."
+    echo "; mail, and authentication names, including mg and mgn. Empty answers are omitted."
     echo
 
     echo "===== ${domain} ANY ====="
