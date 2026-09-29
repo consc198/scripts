@@ -15,7 +15,6 @@ if [ "$#" -lt 1 ]; then
   exit 2
 fi
 
-# Query exact/common names plus the authentication names below mg/mgn.
 COMMON_NAMES=(
   "" "www" "mg" "mgn" "mail" "smtp" "imap" "pop"
   "autodiscover" "autoconfig" "ftp" "webmail" "cpanel" "calendar"
@@ -24,6 +23,27 @@ COMMON_NAMES=(
   "_dmarc"
   "s1._domainkey.mg" "s2._domainkey.mg" "selector1._domainkey.mg" "selector2._domainkey.mg" "_dmarc.mg"
   "s1._domainkey.mgn" "s2._domainkey.mgn" "selector1._domainkey.mgn" "selector2._domainkey.mgn" "_dmarc.mgn"
+)
+
+# SRV records use service labels rather than ordinary hostnames, so they need
+# explicit queries. The names below cover common mail/autodiscover services.
+SRV_NAMES=(
+  "_imaps._tcp"
+  "_pop3s._tcp"
+  "_submission._tcp"
+  "_autodiscover._tcp"
+  "_imap._tcp"
+  "_pop3._tcp"
+  "_smtps._tcp"
+  "_smtp._tcp"
+  "_submission._tcp.mg"
+  "_autodiscover._tcp.mg"
+  "_imaps._tcp.mg"
+  "_pop3s._tcp.mg"
+  "_submission._tcp.mgn"
+  "_autodiscover._tcp.mgn"
+  "_imaps._tcp.mgn"
+  "_pop3s._tcp.mgn"
 )
 
 TYPES=(A AAAA CNAME MX TXT CAA SRV NS)
@@ -39,8 +59,7 @@ for domain_arg in "$@"; do
     echo "; Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo ";"
     echo "; Records are copied directly from dig output."
-    echo "; Explicitly checks s1._domainkey and _dmarc at the apex, plus variants"
-    echo "; below mg and mgn."
+    echo "; Explicitly checks DKIM/DMARC names and common mail SRV labels."
     echo "; DNSSEC records are not queried. Apex NS is omitted for normal Cloudflare"
     echo "; full-zone setup because Cloudflare supplies authoritative nameservers."
     echo
@@ -49,29 +68,28 @@ for domain_arg in "$@"; do
     echo
 
     for name in "${COMMON_NAMES[@]}"; do
-      if [ -n "$name" ]; then
-        fqdn="${name}.${domain}."
-      else
-        fqdn="${domain}."
-      fi
-
+      if [ -n "$name" ]; then fqdn="${name}.${domain}."; else fqdn="${domain}."; fi
       for type in "${TYPES[@]}"; do
         while IFS= read -r line; do
           [ -z "$line" ] && continue
-          if [ "$fqdn" = "${domain}." ] && [ "$type" = "NS" ]; then
-            continue
-          fi
+          if [ "$fqdn" = "${domain}." ] && [ "$type" = "NS" ]; then continue; fi
           printf '%s\n' "$line"
         done < <(dig +noall +answer "$fqdn" "$type" 2>/dev/null)
       done
     done
+
+    # Explicit SRV service names. These are not discovered by querying
+    # ordinary hostnames such as mail.example.com.
+    for name in "${SRV_NAMES[@]}"; do
+      fqdn="${name}.${domain}."
+      while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        printf '%s\n' "$line"
+      done < <(dig +noall +answer "$fqdn" SRV 2>/dev/null)
+    done
   } > "$tmp"
 
-  awk '
-    /^;/ || /^\$ORIGIN/ || /^\$TTL/ { print; next }
-    !seen[$0]++ { print }
-  ' "$tmp" > "$outfile"
+  awk '/^;/ || /^\$ORIGIN/ || /^\$TTL/ { print; next } !seen[$0]++ { print }' "$tmp" > "$outfile"
   rm -f "$tmp"
-
   echo "Wrote $outfile"
 done
