@@ -15,9 +15,7 @@ if [ "$#" -lt 1 ]; then
   exit 2
 fi
 
-# Exact/common names to query. The DKIM and DMARC names are deliberately
-# explicit, including variants below mg/mgn because mail-sending subdomains
-# commonly have their own authentication records.
+# Query exact/common names plus the authentication names below mg/mgn.
 COMMON_NAMES=(
   "" "www" "mg" "mgn" "mail" "smtp" "imap" "pop"
   "autodiscover" "autoconfig" "ftp" "webmail" "cpanel" "calendar"
@@ -41,13 +39,10 @@ for domain_arg in "$@"; do
     echo "; Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo ";"
     echo "; Records are copied directly from dig output."
-    echo "; Explicitly checks s1._domainkey and _dmarc at the apex, plus their"
-    echo "; variants below mg and mgn."
+    echo "; Explicitly checks s1._domainkey and _dmarc at the apex, plus variants"
+    echo "; below mg and mgn."
     echo "; DNSSEC records are not queried. Apex NS is omitted for normal Cloudflare"
-    echo "; full-zone setup because Cloudflare supplies the authoritative NS records."
-    echo ";"
-    echo "; DNS has no standard way to enumerate arbitrary subdomains. This file"
-    echo "; contains the apex and the explicit names in COMMON_NAMES."
+    echo "; full-zone setup because Cloudflare supplies authoritative nameservers."
     echo
     printf '%s\n' '$ORIGIN '"${domain}."
     printf '%s\n' '$TTL 3600'
