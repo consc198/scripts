@@ -15,15 +15,19 @@ if [ "$#" -lt 1 ]; then
   exit 2
 fi
 
-# Known names to check. In particular, s1._domainkey and _dmarc are queried
-# explicitly as TXT records. Other common names are retained for migration.
+# Exact/common names to query. The DKIM and DMARC names are deliberately
+# explicit, including variants below mg/mgn because mail-sending subdomains
+# commonly have their own authentication records.
 COMMON_NAMES=(
   "" "www" "mg" "mgn" "mail" "smtp" "imap" "pop"
   "autodiscover" "autoconfig" "ftp" "webmail" "cpanel" "calendar"
   "mta" "mx" "dkim" "_domainkey"
   "s1._domainkey" "s2._domainkey" "selector1._domainkey" "selector2._domainkey"
   "_dmarc"
+  "s1._domainkey.mg" "s2._domainkey.mg" "selector1._domainkey.mg" "selector2._domainkey.mg" "_dmarc.mg"
+  "s1._domainkey.mgn" "s2._domainkey.mgn" "selector1._domainkey.mgn" "selector2._domainkey.mgn" "_dmarc.mgn"
 )
+
 TYPES=(A AAAA CNAME MX TXT CAA SRV NS)
 
 for domain_arg in "$@"; do
@@ -37,7 +41,8 @@ for domain_arg in "$@"; do
     echo "; Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
     echo ";"
     echo "; Records are copied directly from dig output."
-    echo "; s1._domainkey.${domain}. and _dmarc.${domain}. are explicitly queried."
+    echo "; Explicitly checks s1._domainkey and _dmarc at the apex, plus their"
+    echo "; variants below mg and mgn."
     echo "; DNSSEC records are not queried. Apex NS is omitted for normal Cloudflare"
     echo "; full-zone setup because Cloudflare supplies the authoritative NS records."
     echo ";"
