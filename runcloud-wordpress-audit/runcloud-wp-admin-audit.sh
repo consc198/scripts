@@ -237,24 +237,35 @@ fi
 results_tmp="$(mktemp "${RESULTS_FILE}.tmp.XXXXXX")"
 trap 'rm -f "$findings_file" "$results_tmp"' EXIT
 
+# Do not load the complete findings file into a shell variable. Large audits
+# can exceed the operating system's argument/environment size limit.
 if [[ -s "$findings_file" ]]; then
-    findings_json="$(jq -s '.' "$findings_file")"
+    if ! jq -n \
+        --arg generated_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        --argjson servers_scanned "$server_count" \
+        --argjson apps_scanned "$app_count" \
+        --argjson admins_found "$finding_count" \
+        --arg excluded_users "$EXCLUDED_USERS" \
+        --slurpfile findings "$findings_file" \
+        '{generated_at:$generated_at,servers_scanned:$servers_scanned,wordpress_apps_scanned:$apps_scanned,non_excluded_admins_found:$admins_found,excluded_users:($excluded_users|split(",")|map(select(length>0))),findings:$findings}' \
+        > "$results_tmp"; then
+        echo "ERROR: Failed to generate JSON report: $RESULTS_FILE" >&2
+        rm -f "$results_tmp"
+        exit 1
+    fi
 else
-    findings_json='[]'
-fi
-
-if ! jq -n \
-    --arg generated_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-    --argjson servers_scanned "$server_count" \
-    --argjson apps_scanned "$app_count" \
-    --argjson admins_found "$finding_count" \
-    --arg excluded_users "$EXCLUDED_USERS" \
-    --argjson findings "$findings_json" \
-    '{generated_at:$generated_at,servers_scanned:$servers_scanned,wordpress_apps_scanned:$apps_scanned,non_excluded_admins_found:$admins_found,excluded_users:($excluded_users|split(",")|map(select(length>0))),findings:$findings}' \
-    > "$results_tmp"; then
-    echo "ERROR: Failed to generate JSON report: $RESULTS_FILE" >&2
-    rm -f "$results_tmp"
-    exit 1
+    if ! jq -n \
+        --arg generated_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+        --argjson servers_scanned "$server_count" \
+        --argjson apps_scanned "$app_count" \
+        --argjson admins_found "$finding_count" \
+        --arg excluded_users "$EXCLUDED_USERS" \
+        '{generated_at:$generated_at,servers_scanned:$servers_scanned,wordpress_apps_scanned:$apps_scanned,non_excluded_admins_found:$admins_found,excluded_users:($excluded_users|split(",")|map(select(length>0))),findings:[]}' \
+        > "$results_tmp"; then
+        echo "ERROR: Failed to generate JSON report: $RESULTS_FILE" >&2
+        rm -f "$results_tmp"
+        exit 1
+    fi
 fi
 
 chmod 600 "$results_tmp"
