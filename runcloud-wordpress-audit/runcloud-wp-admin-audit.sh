@@ -11,23 +11,29 @@
 # Authentication:
 #   Put the RunCloud API token in token.txt in the same directory as this script.
 #
-# Optional:
-#   export SSH_KEY="$HOME/.ssh/id_rsa"
-#   export SSH_PORT=22
-#   export EXCLUDED_USERS='conversal'
+# SSH:
+#   SSH is ALWAYS performed as root. The WordPress command is then executed
+#   as the application's RunCloud system user.
+#
+# Results:
+#   A JSON report is written to wordpress-admin-audit-results.json by default.
+#   Set RESULTS_FILE to change the output location.
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TOKEN_FILE="${TOKEN_FILE:-${SCRIPT_DIR}/token.txt}"
+RESULTS_FILE="${RESULTS_FILE:-${SCRIPT_DIR}/wordpress-admin-audit-results.json}"
 RUNCLOUD_API="https://manage.runcloud.io/api/v3"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 SSH_PORT="${SSH_PORT:-22}"
 EXCLUDED_USERS="${EXCLUDED_USERS:-conversal}"
+DEBUG="${DEBUG:-0}"
+
+SSH_USER="root"
 
 if [[ ! -f "$TOKEN_FILE" ]]; then
     echo "ERROR: RunCloud API token file not found: $TOKEN_FILE" >&2
-    echo "Create it with the token on a single line." >&2
     exit 1
 fi
 
@@ -40,7 +46,7 @@ if [[ -z "$RUNCLOUD_TOKEN" ]]; then
     exit 1
 fi
 
-for command in curl jq ssh; do
+for command in curl jq ssh mktemp; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "ERROR: Required command not found: $command" >&2
         exit 1
@@ -49,7 +55,6 @@ done
 
 rc_get() {
     local endpoint="$1"
-
     curl --fail --silent --show-error --location \
         -H "Authorization: Bearer ${RUNCLOUD_TOKEN}" \
         -H "Accept: application/json" \
@@ -71,7 +76,6 @@ rc_all_pages() {
         fi
 
         echo "$response" | jq -c '.data[]?' || return 1
-
         total_pages="$(echo "$response" | jq -r '.meta.pagination.total_pages // 1')"
         [[ "$total_pages" =~ ^[0-9]+$ ]] || total_pages=1
         ((page++))
@@ -81,7 +85,6 @@ rc_all_pages() {
 is_excluded() {
     local username="${1,,}"
     local excluded
-
     IFS=',' read -ra excluded_users <<< "$EXCLUDED_USERS"
     for excluded in "${excluded_users[@]}"; do
         excluded="${excluded,,}"
@@ -89,106 +92,185 @@ is_excluded() {
             return 0
         fi
     done
-
     return 1
 }
 
 ssh_command() {
     local host="$1"
-    local username="$2"
-    local command="$3"
+    local command="$2"
+    local stderr_file="$3"
+    local ssh_args=(
+        -i "$SSH_KEY"
+        -p "$SSH_PORT"
+        -o BatchMode=yes
+        -o ConnectTimeout=10
+        -o StrictHostKeyChecking=accept-new
+    )
 
-    ssh \
-        -i "$SSH_KEY" \
-        -p "$SSH_PORT" \
-        -o BatchMode=yes \
-        -o ConnectTimeout=10 \
-        -o StrictHostKeyChecking=accept-new \
-        "${username}@${host}" \
-        "$command"
+    [[ "$DEBUG" == "1" ]] && ssh_args+=( -v )
+
+    ssh "${ssh_args[@]}" "root@${host}" "$command" 2>"$stderr_file"
 }
 
+findings_file="$(mktemp)"
+trap 'rm -f "$findings_file"' EXIT
+
 printf '%-20s %-16s %-28s %-24s %-32s %s\n' \
-    "SERVER" "IP" "APP" "USERNAME" "EMAIL" "REGISTERED"
+    "SERVER" "IP" "SITE URL" "USERNAME" "EMAIL" "REGISTERED"
 printf '%s\n' "$(printf '%0.s-' {1..150})"
 
 server_count=0
+app_count=0
 finding_count=0
 
 while IFS= read -r server; do
     [[ -z "$server" ]] && continue
-
     server_count=$((server_count + 1))
 
     server_id="$(jq -r '.id' <<< "$server")"
     server_name="$(jq -r '.name // "Unknown"' <<< "$server")"
     server_ip="$(jq -r '.ipAddress // empty' <<< "$server")"
 
-    if [[ -z "$server_ip" ]]; then
-        echo "WARN: ${server_name}: no IP address; skipping." >&2
-        continue
-    fi
+    [[ -z "$server_ip" ]] && { echo "WARN: ${server_name}: no IP address; skipping." >&2; continue; }
 
     while IFS= read -r app; do
         [[ -z "$app" ]] && continue
+        app_count=$((app_count + 1))
 
         app_id="$(jq -r '.id' <<< "$app")"
         app_name="$(jq -r '.name // "Unknown"' <<< "$app")"
+        site_url="$(jq -r '.domain // .primaryDomain // .url // .name // "Unknown"' <<< "$app")"
         app_path="$(jq -r '.publicPath // .rootPath // empty' <<< "$app")"
         system_user_id="$(jq -r '.server_user_id // empty' <<< "$app")"
 
-        [[ -z "$app_path" || -z "$system_user_id" ]] && {
-            echo "WARN: ${server_name}/${app_name}: missing path or system user; skipping." >&2
+        if [[ -z "$app_path" || -z "$system_user_id" ]]; then
+            echo "WARN: ${server_name}/${app_name}: missing application path or system user." >&2
             continue
-        }
+        fi
 
         user_json="$(rc_get "/servers/${server_id}/users/${system_user_id}")" || {
             echo "WARN: ${server_name}/${app_name}: unable to retrieve system user ${system_user_id}." >&2
             continue
         }
 
-        ssh_user="$(jq -r '.username // empty' <<< "$user_json")"
+        runcloud_user="$(jq -r '.username // empty' <<< "$user_json")"
+        [[ -z "$runcloud_user" ]] && { echo "WARN: ${server_name}/${app_name}: system user has no username." >&2; continue; }
 
-        if [[ -z "$ssh_user" ]]; then
-            echo "WARN: ${server_name}/${app_name}: system user has no username; skipping." >&2
-            continue
+        quoted_path="$(printf '%q' "$app_path")"
+        quoted_user="$(printf '%q' "$runcloud_user")"
+        remote_command="sudo -u ${quoted_user} -- /bin/bash -lc 'cd ${quoted_path} && wp user list --role=administrator --fields=ID,user_login,user_email,user_registered --format=json --skip-plugins --skip-themes'"
+
+        if [[ "$DEBUG" == "1" ]]; then
+            echo "DEBUG: server=${server_name} IP=${server_ip} site_url=${site_url} SSH=root app_user=${runcloud_user} path=${app_path}" >&2
+            echo "DEBUG: command=${remote_command}" >&2
         fi
 
-        remote_command="cd $(printf '%q' "$app_path") && wp user list --role=administrator --fields=ID,user_login,user_email,user_registered --format=csv --skip-plugins --skip-themes"
-
-        admin_csv="$(ssh_command "$server_ip" "$ssh_user" "$remote_command" 2>/dev/null)"
+        stderr_file="$(mktemp)"
+        admin_json="$(ssh_command "$server_ip" "$remote_command" "$stderr_file")"
         ssh_status=$?
+        ssh_error="$(cat "$stderr_file")"
+        rm -f "$stderr_file"
 
         if (( ssh_status != 0 )); then
             echo "WARN: ${server_name}/${app_name}: SSH/WP-CLI query failed." >&2
+            echo "      Site URL: ${site_url}" >&2
+            echo "      Server: ${server_ip}" >&2
+            echo "      SSH user: root" >&2
+            echo "      App user: ${runcloud_user}" >&2
+            echo "      App path: ${app_path}" >&2
+            echo "      Exit code: ${ssh_status}" >&2
+            [[ -n "$ssh_error" ]] && printf '        %s\n' "$ssh_error" >&2
+            (( ssh_status == 255 )) && echo "      Hint: exit code 255 usually indicates an SSH connection or authentication problem." >&2
             continue
         fi
 
-        [[ -z "$admin_csv" ]] && continue
+        if [[ -z "$admin_json" || "$admin_json" == "null" ]]; then
+            continue
+        fi
 
-        while IFS=',' read -r user_id username email registered; do
-            [[ "$user_id" == "ID" || -z "$username" ]] && continue
+        if ! jq -e 'type == "array"' >/dev/null 2>&1 <<< "$admin_json"; then
+            echo "WARN: ${server_name}/${app_name}: WP-CLI returned invalid JSON for ${site_url}." >&2
+            echo "      Output: ${admin_json}" >&2
+            continue
+        fi
 
-            if is_excluded "$username"; then
-                continue
-            fi
+        while IFS= read -r admin; do
+            [[ -z "$admin" ]] && continue
+
+            user_id="$(jq -r '.ID // empty' <<< "$admin")"
+            username="$(jq -r '.user_login // empty' <<< "$admin")"
+            email="$(jq -r '.user_email // empty' <<< "$admin")"
+            registered="$(jq -r '.user_registered // empty' <<< "$admin")"
+            [[ -z "$username" ]] && continue
+            is_excluded "$username" && continue
 
             finding_count=$((finding_count + 1))
 
             printf '%-20s %-16s %-28s %-24s %-32s %s\n' \
-                "$server_name" \
-                "$server_ip" \
-                "$app_name" \
-                "$username" \
-                "$email" \
-                "$registered"
-        done <<< "$admin_csv"
+                "$server_name" "$server_ip" "$site_url" "$username" "$email" "$registered"
+
+            jq -cn \
+                --arg server "$server_name" \
+                --arg server_ip "$server_ip" \
+                --arg site_url "$site_url" \
+                --arg app_name "$app_name" \
+                --arg app_id "$app_id" \
+                --arg app_path "$app_path" \
+                --arg username "$username" \
+                --arg email "$email" \
+                --arg registered "$registered" \
+                --arg user_id "$user_id" \
+                '{server:$server,server_ip:$server_ip,site_url:$site_url,app_name:$app_name,app_id:$app_id,app_path:$app_path,username:$username,email:$email,user_id:$user_id,registered:$registered}' \
+                >> "$findings_file"
+        done < <(jq -c '.[]' <<< "$admin_json")
 
     done < <(rc_all_pages "/servers/${server_id}/webapps?type=wordpress")
-
 done < <(rc_all_pages "/servers")
+
+# Write atomically so the report is either complete or absent, never partial.
+results_dir="$(dirname -- "$RESULTS_FILE")"
+if [[ ! -d "$results_dir" ]]; then
+    echo "ERROR: Results directory does not exist: $results_dir" >&2
+    exit 1
+fi
+
+results_tmp="$(mktemp "${RESULTS_FILE}.tmp.XXXXXX")"
+trap 'rm -f "$findings_file" "$results_tmp"' EXIT
+
+if [[ -s "$findings_file" ]]; then
+    findings_json="$(jq -s '.' "$findings_file")"
+else
+    findings_json='[]'
+fi
+
+if ! jq -n \
+    --arg generated_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson servers_scanned "$server_count" \
+    --argjson apps_scanned "$app_count" \
+    --argjson admins_found "$finding_count" \
+    --arg excluded_users "$EXCLUDED_USERS" \
+    --argjson findings "$findings_json" \
+    '{generated_at:$generated_at,servers_scanned:$servers_scanned,wordpress_apps_scanned:$apps_scanned,non_excluded_admins_found:$admins_found,excluded_users:($excluded_users|split(",")|map(select(length>0))),findings:$findings}' \
+    > "$results_tmp"; then
+    echo "ERROR: Failed to generate JSON report: $RESULTS_FILE" >&2
+    rm -f "$results_tmp"
+    exit 1
+fi
+
+chmod 600 "$results_tmp"
+if ! mv -f "$results_tmp" "$RESULTS_FILE"; then
+    echo "ERROR: Failed to write JSON report: $RESULTS_FILE" >&2
+    exit 1
+fi
+
+trap 'rm -f "$findings_file"' EXIT
 
 echo
 echo "Servers scanned:           $server_count"
+echo "WordPress apps scanned:    $app_count"
 echo "Non-excluded admins found: $finding_count"
 echo "Excluded users:             $EXCLUDED_USERS"
+echo "JSON report:                $RESULTS_FILE"
+if [[ -f "$RESULTS_FILE" ]]; then
+    echo "JSON report size:           $(wc -c < "$RESULTS_FILE") bytes"
+fi
