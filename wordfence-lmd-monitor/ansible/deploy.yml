@@ -12,23 +12,17 @@
   tasks:
     - name: Install base packages
       ansible.builtin.apt:
-        name:
-          - curl
-          - python3
+        name: [curl, python3]
         update_cache: true
         state: present
-
     - name: Download pinned LMD installer
       ansible.builtin.get_url:
         url: "{{ lmd_install_url }}"
         dest: /root/install-maldet.sh
         mode: '0700'
-
     - name: Install LMD
       ansible.builtin.command: /root/install-maldet.sh
-      args:
-        creates: /usr/local/maldetect/maldet
-
+      args: {creates: /usr/local/maldetect/maldet}
     - name: Configure LMD policy
       ansible.builtin.blockinfile:
         path: /usr/local/maldetect/conf.maldet
@@ -44,7 +38,6 @@
           inotify_sleep="15"
           monitor_scan_owner_filters="0"
           default_monitor_mode="{{ lmd_site_root }}"
-
     - name: Install agent directory
       ansible.builtin.file:
         path: /opt/wp-malware-monitor
@@ -52,7 +45,6 @@
         owner: root
         group: root
         mode: '0750'
-
     - name: Install agent
       ansible.builtin.copy:
         src: ../agent/agent.py
@@ -60,7 +52,6 @@
         owner: root
         group: root
         mode: '0700'
-
     - name: Create agent state and config directories
       ansible.builtin.file:
         path: "{{ item }}"
@@ -68,10 +59,7 @@
         owner: root
         group: root
         mode: '0700'
-      loop:
-        - /var/lib/wp-malware-monitor/queue
-        - /etc/wp-malware-monitor
-
+      loop: [/var/lib/wp-malware-monitor/queue, /etc/wp-malware-monitor]
     - name: Write agent configuration
       ansible.builtin.copy:
         dest: /etc/wp-malware-monitor/agent.json
@@ -87,33 +75,30 @@
             "site_root": "{{ lmd_site_root }}",
             "full_scan_timeout": 3600
           }
-
-    - name: Install systemd service
+    - name: Install systemd units
       ansible.builtin.copy:
-        src: ../systemd/wp-malware-monitor.service
-        dest: /etc/systemd/system/wp-malware-monitor.service
+        src: "../systemd/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
         owner: root
         group: root
         mode: '0644'
-
-    - name: Install systemd timer
-      ansible.builtin.copy:
-        src: ../systemd/wp-malware-monitor.timer
-        dest: /etc/systemd/system/wp-malware-monitor.timer
-        owner: root
-        group: root
-        mode: '0644'
-
+      loop:
+        - wp-malware-monitor.service
+        - wp-malware-monitor.timer
+        - wp-malware-monitor-heartbeat.service
+        - wp-malware-monitor-heartbeat.timer
     - name: Reload systemd
-      ansible.builtin.systemd:
-        daemon_reload: true
-
+      ansible.builtin.systemd: {daemon_reload: true}
     - name: Enable and start LMD monitor
       ansible.builtin.command: "maldet -b -m {{ lmd_site_root }}"
       changed_when: false
-
-    - name: Enable daily agent timer
+    - name: Enable daily scan timer
       ansible.builtin.systemd:
         name: wp-malware-monitor.timer
+        enabled: true
+        state: started
+    - name: Enable heartbeat timer
+      ansible.builtin.systemd:
+        name: wp-malware-monitor-heartbeat.timer
         enabled: true
         state: started
