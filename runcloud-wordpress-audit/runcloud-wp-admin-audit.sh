@@ -11,9 +11,13 @@
 # Authentication:
 #   Put the RunCloud API token in token.txt in the same directory as this script.
 #
+# SSH:
+#   The script connects to each RunCloud server as root, then executes WP-CLI
+#   as the application's RunCloud system user.
+#
 # Optional:
 #   export SSH_KEY="$HOME/.ssh/id_rsa"
-#   export SSH_PORT=22
+#   export SSH_PORT="22"
 #   export EXCLUDED_USERS='conversal'
 #   export DEBUG=1
 
@@ -24,6 +28,7 @@ TOKEN_FILE="${TOKEN_FILE:-${SCRIPT_DIR}/token.txt}"
 RUNCLOUD_API="https://manage.runcloud.io/api/v3"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 SSH_PORT="${SSH_PORT:-22}"
+SSH_USER="${SSH_USER:-root}"
 EXCLUDED_USERS="${EXCLUDED_USERS:-conversal}"
 DEBUG="${DEBUG:-0}"
 
@@ -42,7 +47,7 @@ if [[ -z "$RUNCLOUD_TOKEN" ]]; then
     exit 1
 fi
 
-for command in curl jq ssh mktemp; do
+for command in curl jq ssh; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "ERROR: Required command not found: $command" >&2
         exit 1
@@ -97,17 +102,23 @@ is_excluded() {
 
 ssh_command() {
     local host="$1"
-    local username="$2"
-    local command="$3"
-    local stderr_file="$4"
+    local command="$2"
+    local stderr_file="$3"
 
-    ssh \
-        -i "$SSH_KEY" \
-        -p "$SSH_PORT" \
-        -o BatchMode=yes \
-        -o ConnectTimeout=10 \
-        -o StrictHostKeyChecking=accept-new \
-        "${username}@${host}" \
+    local ssh_args=(
+        -i "$SSH_KEY"
+        -p "$SSH_PORT"
+        -o BatchMode=yes
+        -o ConnectTimeout=10
+        -o StrictHostKeyChecking=accept-new
+    )
+
+    if [[ "$DEBUG" == "1" ]]; then
+        ssh_args+=( -v )
+    fi
+
+    ssh "${ssh_args[@]}" \
+        "${SSH_USER}@${host}" \
         "$command" \
         2>"$stderr_file"
 }
@@ -141,68 +152,75 @@ while IFS= read -r server; do
         app_path="$(jq -r '.publicPath // .rootPath // empty' <<< "$app")"
         system_user_id="$(jq -r '.server_user_id // empty' <<< "$app")"
 
-        [[ -z "$app_path" || -z "$system_user_id" ]] && {
-            echo "WARN: ${server_name}/${app_name}: missing path or system user; skipping." >&2
+        if [[ -z "$app_path" || -z "$system_user_id" ]]; then
+            echo "WARN: ${server_name}/${app_name}: missing application path or system user." >&2
+            echo "      App ID: ${app_id}" >&2
+            echo "      Path: ${app_path:-<empty>}" >&2
+            echo "      System user ID: ${system_user_id:-<empty>}" >&2
             continue
-        }
+        fi
 
         user_json="$(rc_get "/servers/${server_id}/users/${system_user_id}")" || {
             echo "WARN: ${server_name}/${app_name}: unable to retrieve system user ${system_user_id}." >&2
             continue
         }
 
-        ssh_user="$(jq -r '.username // empty' <<< "$user_json")"
+        runcloud_user="$(jq -r '.username // empty' <<< "$user_json")"
 
-        if [[ -z "$ssh_user" ]]; then
-            echo "WARN: ${server_name}/${app_name}: system user has no username; skipping." >&2
+        if [[ -z "$runcloud_user" ]]; then
+            echo "WARN: ${server_name}/${app_name}: system user has no username." >&2
             continue
         fi
 
-        remote_command="cd $(printf '%q' "$app_path") && wp user list --role=administrator --fields=ID,user_login,user_email,user_registered --format=csv --skip-plugins --skip-themes"
-        stderr_file="$(mktemp)"
+        # Escape the application path and user for the remote shell.
+        quoted_path="$(printf '%q' "$app_path")"
+        quoted_user="$(printf '%q' "$runcloud_user")"
+
+        remote_command="sudo -u ${quoted_user} -- /bin/bash -lc 'cd ${quoted_path} && wp user list --role=administrator --fields=ID,user_login,user_email,user_registered --format=csv --skip-plugins --skip-themes'"
 
         if [[ "$DEBUG" == "1" ]]; then
-            echo "DEBUG: Server=${server_name} IP=${server_ip}" >&2
-            echo "DEBUG: App=${app_name} ID=${app_id}" >&2
-            echo "DEBUG: SSH user=${ssh_user}" >&2
-            echo "DEBUG: App path=${app_path}" >&2
-            echo "DEBUG: SSH key=${SSH_KEY}" >&2
-            echo "DEBUG: Running WP-CLI query" >&2
+            echo >&2
+            echo "DEBUG: server=${server_name}" >&2
+            echo "DEBUG: IP=${server_ip}" >&2
+            echo "DEBUG: app=${app_name}" >&2
+            echo "DEBUG: SSH user=${SSH_USER}" >&2
+            echo "DEBUG: RunCloud app user=${runcloud_user}" >&2
+            echo "DEBUG: path=${app_path}" >&2
+            echo "DEBUG: command=${remote_command}" >&2
         fi
 
-        admin_csv="$(ssh_command "$server_ip" "$ssh_user" "$remote_command" "$stderr_file")"
+        stderr_file="$(mktemp)"
+        admin_csv="$(ssh_command "$server_ip" "$remote_command" "$stderr_file")"
         ssh_status=$?
-        ssh_error="$(<"$stderr_file")"
+        ssh_error="$(cat "$stderr_file")"
         rm -f "$stderr_file"
 
         if (( ssh_status != 0 )); then
-            echo "" >&2
-            echo "ERROR: SSH/WP-CLI query failed" >&2
-            echo "  Server:       $server_name" >&2
-            echo "  IP:           $server_ip" >&2
-            echo "  App:          $app_name (ID $app_id)" >&2
-            echo "  SSH user:     $ssh_user" >&2
-            echo "  App path:     $app_path" >&2
-            echo "  Exit code:    $ssh_status" >&2
+            echo "WARN: ${server_name}/${app_name}: SSH/WP-CLI query failed." >&2
+            echo "      Server:       ${server_ip}" >&2
+            echo "      SSH user:     ${SSH_USER}" >&2
+            echo "      App user:     ${runcloud_user}" >&2
+            echo "      App path:     ${app_path}" >&2
+            echo "      Exit code:    ${ssh_status}" >&2
 
             if [[ -n "$ssh_error" ]]; then
-                echo "  Error:" >&2
+                echo "      Error:" >&2
                 while IFS= read -r error_line; do
-                    echo "    $error_line" >&2
+                    echo "        ${error_line}" >&2
                 done <<< "$ssh_error"
             else
-                echo "  Error:        No stderr output was returned." >&2
+                echo "      Error: no SSH/WP-CLI error output was returned." >&2
             fi
 
             if (( ssh_status == 255 )); then
-                echo "  Hint:         Exit 255 normally indicates an SSH connection/authentication problem." >&2
+                echo "      Hint: exit code 255 usually indicates an SSH connection or authentication problem." >&2
+            elif (( ssh_status == 126 )); then
+                echo "      Hint: the command could not be executed. Check sudo permissions, bash, or WP-CLI." >&2
+            elif (( ssh_status == 127 )); then
+                echo "      Hint: a command was not found. Check that bash, sudo, and WP-CLI are available." >&2
             fi
 
             continue
-        fi
-
-        if [[ "$DEBUG" == "1" ]]; then
-            echo "DEBUG: SSH succeeded; WP-CLI returned successfully." >&2
         fi
 
         [[ -z "$admin_csv" ]] && continue
