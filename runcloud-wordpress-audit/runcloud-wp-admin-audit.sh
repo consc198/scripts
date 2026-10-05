@@ -9,24 +9,36 @@
 #   - WP-CLI on each WordPress RunCloud app
 #
 # Authentication:
-#   export RUNCLOUD_TOKEN='...'
+#   Put the RunCloud API token in token.txt in the same directory as this script.
 #
 # Optional:
 #   export SSH_KEY="$HOME/.ssh/id_rsa"
 #   export SSH_PORT=22
 #   export EXCLUDED_USERS='conversal'
-#
-# The default excluded account is "conversal". Multiple exclusions can be
-# supplied as a comma-separated list, e.g. EXCLUDED_USERS='conversal,admin'.
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+TOKEN_FILE="${TOKEN_FILE:-${SCRIPT_DIR}/token.txt}"
 RUNCLOUD_API="https://manage.runcloud.io/api/v3"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 SSH_PORT="${SSH_PORT:-22}"
 EXCLUDED_USERS="${EXCLUDED_USERS:-conversal}"
 
-: "${RUNCLOUD_TOKEN:?Please set RUNCLOUD_TOKEN before running this script.}"
+if [[ ! -f "$TOKEN_FILE" ]]; then
+    echo "ERROR: RunCloud API token file not found: $TOKEN_FILE" >&2
+    echo "Create it with the token on a single line." >&2
+    exit 1
+fi
+
+RUNCLOUD_TOKEN="$(<"$TOKEN_FILE")"
+RUNCLOUD_TOKEN="${RUNCLOUD_TOKEN//$'\r'/}"
+RUNCLOUD_TOKEN="${RUNCLOUD_TOKEN//$'\n'/}"
+
+if [[ -z "$RUNCLOUD_TOKEN" ]]; then
+    echo "ERROR: RunCloud API token file is empty: $TOKEN_FILE" >&2
+    exit 1
+fi
 
 for command in curl jq ssh; do
     if ! command -v "$command" >/dev/null 2>&1; then
@@ -45,8 +57,6 @@ rc_get() {
         "${RUNCLOUD_API}${endpoint}"
 }
 
-# Print every item from a paginated RunCloud endpoint.
-# The endpoint is passed without a page parameter.
 rc_all_pages() {
     local endpoint="$1"
     local page=1
