@@ -15,16 +15,22 @@
 #   SSH is ALWAYS performed as root. The WordPress command is then executed
 #   as the application's RunCloud system user.
 #
+# Results:
+#   A JSON report is written to wordpress-admin-audit-results.json by default.
+#   Set RESULTS_FILE to change the output location.
+#
 # Optional:
 #   export SSH_KEY="$HOME/.ssh/id_rsa"
 #   export SSH_PORT="22"
 #   export EXCLUDED_USERS='conversal'
+#   export RESULTS_FILE="wordpress-admin-audit-results.json"
 #   export DEBUG=1
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TOKEN_FILE="${TOKEN_FILE:-${SCRIPT_DIR}/token.txt}"
+RESULTS_FILE="${RESULTS_FILE:-${SCRIPT_DIR}/wordpress-admin-audit-results.json}"
 RUNCLOUD_API="https://manage.runcloud.io/api/v3"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 SSH_PORT="${SSH_PORT:-22}"
@@ -49,7 +55,7 @@ if [[ -z "$RUNCLOUD_TOKEN" ]]; then
     exit 1
 fi
 
-for command in curl jq ssh; do
+for command in curl jq ssh mktemp; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "ERROR: Required command not found: $command" >&2
         exit 1
@@ -126,11 +132,18 @@ ssh_command() {
         2>"$stderr_file"
 }
 
+# JSONL is used internally so a failed app does not prevent the rest of the
+# audit from completing. Each line is a complete JSON object and is converted
+# to the final report with jq at the end.
+findings_file="$(mktemp)"
+trap 'rm -f "$findings_file"' EXIT
+
 printf '%-20s %-16s %-28s %-24s %-32s %s\n' \
-    "SERVER" "IP" "APP" "USERNAME" "EMAIL" "REGISTERED"
+    "SERVER" "IP" "SITE URL" "USERNAME" "EMAIL" "REGISTERED"
 printf '%s\n' "$(printf '%0.s-' {1..150})"
 
 server_count=0
+app_count=0
 finding_count=0
 
 while IFS= read -r server; do
@@ -150,14 +163,18 @@ while IFS= read -r server; do
     while IFS= read -r app; do
         [[ -z "$app" ]] && continue
 
+        app_count=$((app_count + 1))
+
         app_id="$(jq -r '.id' <<< "$app")"
         app_name="$(jq -r '.name // "Unknown"' <<< "$app")"
+        site_url="$(jq -r '.domain // .primaryDomain // .url // .name // "Unknown"' <<< "$app")"
         app_path="$(jq -r '.publicPath // .rootPath // empty' <<< "$app")"
         system_user_id="$(jq -r '.server_user_id // empty' <<< "$app")"
 
         if [[ -z "$app_path" || -z "$system_user_id" ]]; then
             echo "WARN: ${server_name}/${app_name}: missing application path or system user." >&2
             echo "      App ID: ${app_id}" >&2
+            echo "      Site URL: ${site_url}" >&2
             echo "      Path: ${app_path:-<empty>}" >&2
             echo "      System user ID: ${system_user_id:-<empty>}" >&2
             continue
@@ -178,13 +195,16 @@ while IFS= read -r server; do
         quoted_path="$(printf '%q' "$app_path")"
         quoted_user="$(printf '%q' "$runcloud_user")"
 
-        remote_command="sudo -u ${quoted_user} -- /bin/bash -lc 'cd ${quoted_path} && wp user list --role=administrator --fields=ID,user_login,user_email,user_registered --format=csv --skip-plugins --skip-themes'"
+        # Ask WP-CLI for JSON so usernames, emails, and dates are handled
+        # safely without CSV parsing problems.
+        remote_command="sudo -u ${quoted_user} -- /bin/bash -lc 'cd ${quoted_path} && wp user list --role=administrator --fields=ID,user_login,user_email,user_registered --format=json --skip-plugins --skip-themes'"
 
         if [[ "$DEBUG" == "1" ]]; then
             echo >&2
             echo "DEBUG: server=${server_name}" >&2
             echo "DEBUG: IP=${server_ip}" >&2
             echo "DEBUG: app=${app_name}" >&2
+            echo "DEBUG: site_url=${site_url}" >&2
             echo "DEBUG: SSH user=root (hard-coded)" >&2
             echo "DEBUG: RunCloud app user=${runcloud_user}" >&2
             echo "DEBUG: path=${app_path}" >&2
@@ -192,18 +212,19 @@ while IFS= read -r server; do
         fi
 
         stderr_file="$(mktemp)"
-        admin_csv="$(ssh_command "$server_ip" "$remote_command" "$stderr_file")"
+        admin_json="$(ssh_command "$server_ip" "$remote_command" "$stderr_file")"
         ssh_status=$?
         ssh_error="$(cat "$stderr_file")"
         rm -f "$stderr_file"
 
         if (( ssh_status != 0 )); then
             echo "WARN: ${server_name}/${app_name}: SSH/WP-CLI query failed." >&2
-            echo "      Server:       ${server_ip}" >&2
-            echo "      SSH user:     root" >&2
-            echo "      App user:     ${runcloud_user}" >&2
-            echo "      App path:     ${app_path}" >&2
-            echo "      Exit code:    ${ssh_status}" >&2
+            echo "      Site URL:      ${site_url}" >&2
+            echo "      Server:        ${server_ip}" >&2
+            echo "      SSH user:      root" >&2
+            echo "      App user:      ${runcloud_user}" >&2
+            echo "      App path:      ${app_path}" >&2
+            echo "      Exit code:     ${ssh_status}" >&2
 
             if [[ -n "$ssh_error" ]]; then
                 echo "      Error:" >&2
@@ -225,10 +246,26 @@ while IFS= read -r server; do
             continue
         fi
 
-        [[ -z "$admin_csv" ]] && continue
+        if [[ -z "$admin_json" || "$admin_json" == "null" ]]; then
+            continue
+        fi
 
-        while IFS=',' read -r user_id username email registered; do
-            [[ "$user_id" == "ID" || -z "$username" ]] && continue
+        if ! jq -e 'type == "array"' >/dev/null 2>&1 <<< "$admin_json"; then
+            echo "WARN: ${server_name}/${app_name}: WP-CLI returned invalid JSON." >&2
+            echo "      Site URL: ${site_url}" >&2
+            echo "      Output: ${admin_json}" >&2
+            continue
+        fi
+
+        while IFS= read -r admin; do
+            [[ -z "$admin" ]] && continue
+
+            user_id="$(jq -r '.ID // empty' <<< "$admin")"
+            username="$(jq -r '.user_login // empty' <<< "$admin")"
+            email="$(jq -r '.user_email // empty' <<< "$admin")"
+            registered="$(jq -r '.user_registered // empty' <<< "$admin")"
+
+            [[ -z "$username" ]] && continue
 
             if is_excluded "$username"; then
                 continue
@@ -239,17 +276,60 @@ while IFS= read -r server; do
             printf '%-20s %-16s %-28s %-24s %-32s %s\n' \
                 "$server_name" \
                 "$server_ip" \
-                "$app_name" \
+                "$site_url" \
                 "$username" \
                 "$email" \
                 "$registered"
-        done <<< "$admin_csv"
+
+            jq -cn \
+                --arg server "$server_name" \
+                --arg server_ip "$server_ip" \
+                --arg site_url "$site_url" \
+                --arg app_name "$app_name" \
+                --arg app_id "$app_id" \
+                --arg app_path "$app_path" \
+                --arg username "$username" \
+                --arg email "$email" \
+                --arg registered "$registered" \
+                --arg user_id "$user_id" \
+                '{server: $server, server_ip: $server_ip, site_url: $site_url, app_name: $app_name, app_id: $app_id, app_path: $app_path, username: $username, email: $email, user_id: $user_id, registered: $registered}' \
+                >> "$findings_file"
+
+        done < <(jq -c '.[]' <<< "$admin_json")
 
     done < <(rc_all_pages "/servers/${server_id}/webapps?type=wordpress")
 
 done < <(rc_all_pages "/servers")
 
+# Build a human-friendly JSON report. Only non-excluded administrator users
+# are included in "findings".
+if [[ -s "$findings_file" ]]; then
+    findings_json="$(jq -s '.' "$findings_file")"
+else
+    findings_json='[]'
+fi
+
+jq -n \
+    --arg generated_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson servers_scanned "$server_count" \
+    --argjson apps_scanned "$app_count" \
+    --argjson admins_found "$finding_count" \
+    --arg excluded_users "$EXCLUDED_USERS" \
+    --argjson findings "$findings_json" \
+    '{
+        generated_at: $generated_at,
+        servers_scanned: $servers_scanned,
+        wordpress_apps_scanned: $apps_scanned,
+        non_excluded_admins_found: $admins_found,
+        excluded_users: ($excluded_users | split(",") | map(select(length > 0))),
+        findings: $findings
+    }' > "$RESULTS_FILE"
+
+chmod 600 "$RESULTS_FILE"
+
 echo
 echo "Servers scanned:           $server_count"
+echo "WordPress apps scanned:    $app_count"
 echo "Non-excluded admins found: $finding_count"
 echo "Excluded users:             $EXCLUDED_USERS"
+echo "JSON report:                $RESULTS_FILE"
