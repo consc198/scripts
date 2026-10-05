@@ -12,7 +12,7 @@
 #   Put the RunCloud API token in token.txt in the same directory as this script.
 #
 # SSH:
-#   The script connects to each RunCloud server as root, then executes WP-CLI
+#   SSH is ALWAYS performed as root. The WordPress command is then executed
 #   as the application's RunCloud system user.
 #
 # Optional:
@@ -28,9 +28,11 @@ TOKEN_FILE="${TOKEN_FILE:-${SCRIPT_DIR}/token.txt}"
 RUNCLOUD_API="https://manage.runcloud.io/api/v3"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 SSH_PORT="${SSH_PORT:-22}"
-SSH_USER="${SSH_USER:-root}"
 EXCLUDED_USERS="${EXCLUDED_USERS:-conversal}"
 DEBUG="${DEBUG:-0}"
+
+# Deliberately hard-coded. The SSH connection must always be root.
+SSH_USER="root"
 
 if [[ ! -f "$TOKEN_FILE" ]]; then
     echo "ERROR: RunCloud API token file not found: $TOKEN_FILE" >&2
@@ -117,8 +119,9 @@ ssh_command() {
         ssh_args+=( -v )
     fi
 
+    # IMPORTANT: SSH_USER is hard-coded to root above.
     ssh "${ssh_args[@]}" \
-        "${SSH_USER}@${host}" \
+        "root@${host}" \
         "$command" \
         2>"$stderr_file"
 }
@@ -172,7 +175,6 @@ while IFS= read -r server; do
             continue
         fi
 
-        # Escape the application path and user for the remote shell.
         quoted_path="$(printf '%q' "$app_path")"
         quoted_user="$(printf '%q' "$runcloud_user")"
 
@@ -183,7 +185,7 @@ while IFS= read -r server; do
             echo "DEBUG: server=${server_name}" >&2
             echo "DEBUG: IP=${server_ip}" >&2
             echo "DEBUG: app=${app_name}" >&2
-            echo "DEBUG: SSH user=${SSH_USER}" >&2
+            echo "DEBUG: SSH user=root (hard-coded)" >&2
             echo "DEBUG: RunCloud app user=${runcloud_user}" >&2
             echo "DEBUG: path=${app_path}" >&2
             echo "DEBUG: command=${remote_command}" >&2
@@ -198,7 +200,7 @@ while IFS= read -r server; do
         if (( ssh_status != 0 )); then
             echo "WARN: ${server_name}/${app_name}: SSH/WP-CLI query failed." >&2
             echo "      Server:       ${server_ip}" >&2
-            echo "      SSH user:     ${SSH_USER}" >&2
+            echo "      SSH user:     root" >&2
             echo "      App user:     ${runcloud_user}" >&2
             echo "      App path:     ${app_path}" >&2
             echo "      Exit code:    ${ssh_status}" >&2
