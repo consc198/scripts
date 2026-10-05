@@ -3,7 +3,6 @@
   become: true
   vars:
     central_api_url: "https://security.example.com"
-    lmd_version: "2.0.1"
     lmd_install_url: "https://raw.githubusercontent.com/rfxn/linux-malware-detect/2.0.1/install.sh"
     lmd_site_root: "/var/www/html"
     agent_id: "{{ inventory_hostname }}"
@@ -16,7 +15,6 @@
         name:
           - curl
           - python3
-          - python3-yaml
         update_cache: true
         state: present
 
@@ -63,17 +61,20 @@
         group: root
         mode: '0700'
 
-    - name: Create agent state directory
+    - name: Create agent state and config directories
       ansible.builtin.file:
-        path: /var/lib/wp-malware-monitor/queue
+        path: "{{ item }}"
         state: directory
         owner: root
         group: root
         mode: '0700'
+      loop:
+        - /var/lib/wp-malware-monitor/queue
+        - /etc/wp-malware-monitor
 
     - name: Write agent configuration
       ansible.builtin.copy:
-        dest: /etc/wp-malware-monitor-agent.json
+        dest: /etc/wp-malware-monitor/agent.json
         owner: root
         group: root
         mode: '0600'
@@ -86,12 +87,6 @@
             "site_root": "{{ lmd_site_root }}",
             "full_scan_timeout": 3600
           }
-
-    - name: Ensure agent reads expected config path
-      ansible.builtin.file:
-        src: /etc/wp-malware-monitor-agent.json
-        dest: /etc/wp-malware-monitor/agent.json
-        state: link
 
     - name: Install systemd service
       ansible.builtin.copy:
@@ -108,14 +103,6 @@
         owner: root
         group: root
         mode: '0644'
-
-    - name: Ensure config directory exists
-      ansible.builtin.file:
-        path: /etc/wp-malware-monitor
-        state: directory
-        owner: root
-        group: root
-        mode: '0700'
 
     - name: Reload systemd
       ansible.builtin.systemd:
