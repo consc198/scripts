@@ -1,0 +1,6 @@
+[wordpress]
+wp-001 ansible_host=203.0.113.10
+wp-002 ansible_host=203.0.113.11
+
+[wordpress:vars]
+ansible_user=ubuntu
