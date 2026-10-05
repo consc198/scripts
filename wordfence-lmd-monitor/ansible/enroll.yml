@@ -7,11 +7,28 @@
     security_monitor_url: "https://security.example.com"
     enrollment_token: "{{ vault_enrollment_token }}"
     agent_config_dir: /etc/security-monitor
+    site_root: /var/www/html
   tasks:
     - name: Create agent configuration directory
       ansible.builtin.file:
         path: "{{ agent_config_dir }}"
         state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Create agent queue directory
+      ansible.builtin.file:
+        path: /var/lib/wp-malware-monitor/queue
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Install monitoring agent
+      ansible.builtin.copy:
+        src: ../agent/agent.py
+        dest: /usr/local/sbin/wp-malware-monitor-agent
         owner: root
         group: root
         mode: '0700'
@@ -32,19 +49,20 @@
         ENROLLMENT_TOKEN: "{{ enrollment_token }}"
         HOSTNAME_VALUE: "{{ ansible_fqdn }}"
         SITE_URL: "{{ site_url | default('') }}"
+        SITE_ROOT: "{{ site_root }}"
       register: enrollment_result
       no_log: true
       changed_when: true
-      when: not (agent_config_dir + '/credentials.json') is file
+      when: not (agent_config_dir + '/agent.json') is file
 
-    - name: Store enrollment response
-      ansible.builtin.copy:
-        content: "{{ enrollment_result.stdout }}\n"
-        dest: "{{ agent_config_dir }}/credentials.json"
-        owner: root
-        group: root
-        mode: '0600'
-      when:
-        - enrollment_result is defined
-        - enrollment_result.stdout is defined
-        - enrollment_result.stdout | length > 0
+    - name: Verify enrolled agent configuration exists
+      ansible.builtin.stat:
+        path: "{{ agent_config_dir }}/agent.json"
+      register: agent_config
+
+    - name: Refuse deployment if enrollment did not produce credentials
+      ansible.builtin.assert:
+        that:
+          - agent_config.stat.exists
+          - agent_config.stat.mode == '0600'
+        fail_msg: "Agent enrollment did not produce a protected agent configuration."
