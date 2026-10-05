@@ -1,0 +1,8 @@
+{
+  "agent_id": "REPLACE_WITH_UNIQUE_ID",
+  "secret": "REPLACE_WITH_UNIQUE_SECRET",
+  "api_url": "https://security.example.com",
+  "site_url": "https://example.com",
+  "site_root": "/var/www/example.com",
+  "full_scan_timeout": 3600
+}

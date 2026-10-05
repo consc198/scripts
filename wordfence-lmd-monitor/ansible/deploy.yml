@@ -1,0 +1,85 @@
+- name: Deploy WordPress malware monitoring
+  hosts: wordpress
+  become: true
+  vars:
+    central_api_url: "https://security.example.com"
+    lmd_install_url: "https://raw.githubusercontent.com/rfxn/linux-malware-detect/v2.0.1/install.sh"
+    lmd_site_root: "/var/www/html"
+    agent_id: "{{ inventory_hostname }}"
+    agent_secret: "{{ vault_agent_secrets[inventory_hostname] }}"
+    site_url: ""
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt: {name: [curl, python3], update_cache: true, state: present}
+    - name: Download pinned LMD installer
+      ansible.builtin.get_url: {url: "{{ lmd_install_url }}", dest: /root/install-maldet.sh, mode: '0700'}
+    - name: Install LMD
+      ansible.builtin.command: /root/install-maldet.sh
+      args: {creates: /usr/local/maldetect/maldet}
+    - name: Configure LMD policy
+      ansible.builtin.blockinfile:
+        path: /usr/local/maldetect/conf.maldet
+        marker: "# {mark} WORDPRESS MALWARE MONITOR"
+        block: |
+          email_alert="0"
+          quarantine_hits="0"
+          quarantine_clean="0"
+          scan_yara="1"
+          scan_clamscan="auto"
+          scan_hashtype="auto"
+          scan_workers="auto"
+          inotify_sleep="15"
+          monitor_scan_owner_filters="0"
+          default_monitor_mode="{{ lmd_site_root }}"
+          post_scan_hook="/opt/wp-malware-monitor/lmd-post-scan-hook.sh"
+          post_scan_hook_format="json"
+          post_scan_hook_exec="async"
+          post_scan_hook_timeout="60"
+          post_scan_hook_on="all"
+          post_scan_hook_min_hits="1"
+    - name: Install agent directory
+      ansible.builtin.file: {path: /opt/wp-malware-monitor, state: directory, owner: root, group: root, mode: '0750'}
+    - name: Install agent
+      ansible.builtin.copy: {src: ../agent/agent.py, dest: /opt/wp-malware-monitor/agent.py, owner: root, group: root, mode: '0700'}
+    - name: Install LMD hook
+      ansible.builtin.copy: {src: ../lmd/post-scan-hook.sh, dest: /opt/wp-malware-monitor/lmd-post-scan-hook.sh, owner: root, group: root, mode: '0700'}
+    - name: Create agent state and config directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+      loop: [/var/lib/wp-malware-monitor/queue, /etc/wp-malware-monitor]
+    - name: Write agent configuration
+      ansible.builtin.copy:
+        dest: /etc/wp-malware-monitor/agent.json
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          {
+            "agent_id": "{{ agent_id }}",
+            "secret": "{{ agent_secret }}",
+            "api_url": "{{ central_api_url }}",
+            "site_url": "{{ site_url }}",
+            "site_root": "{{ lmd_site_root }}",
+            "full_scan_timeout": 3600
+          }
+    - name: Install systemd units
+      ansible.builtin.copy:
+        src: "../systemd/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: '0644'
+      loop: [wp-malware-monitor.service, wp-malware-monitor.timer, wp-malware-monitor-heartbeat.service, wp-malware-monitor-heartbeat.timer]
+    - name: Reload systemd
+      ansible.builtin.systemd: {daemon_reload: true}
+    - name: Enable and start LMD monitor
+      ansible.builtin.command: "maldet -b -m {{ lmd_site_root }}"
+      changed_when: false
+    - name: Enable daily scan timer
+      ansible.builtin.systemd: {name: wp-malware-monitor.timer, enabled: true, state: started}
+    - name: Enable heartbeat timer
+      ansible.builtin.systemd: {name: wp-malware-monitor-heartbeat.timer, enabled: true, state: started}

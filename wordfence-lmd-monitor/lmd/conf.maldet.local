@@ -1,0 +1,14 @@
+# Local fleet policy. Merge these values into /usr/local/maldetect/conf.maldet or
+# the distro-specific LMD configuration file installed by LMD.
+# Detection only: no automatic quarantine/cleanup.
+email_alert="0"
+quarantine_hits="0"
+quarantine_clean="0"
+scan_yara="1"
+scan_clamscan="auto"
+scan_hashtype="auto"
+scan_workers="auto"
+inotify_sleep="15"
+monitor_scan_owner_filters="0"
+# Set monitor mode to the exact WordPress document root on each host.
+# default_monitor_mode="/var/www/example.com"
