@@ -15,6 +15,7 @@
 #   export SSH_KEY="$HOME/.ssh/id_rsa"
 #   export SSH_PORT=22
 #   export EXCLUDED_USERS='conversal'
+#   export DEBUG=1
 
 set -uo pipefail
 
@@ -24,6 +25,7 @@ RUNCLOUD_API="https://manage.runcloud.io/api/v3"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
 SSH_PORT="${SSH_PORT:-22}"
 EXCLUDED_USERS="${EXCLUDED_USERS:-conversal}"
+DEBUG="${DEBUG:-0}"
 
 if [[ ! -f "$TOKEN_FILE" ]]; then
     echo "ERROR: RunCloud API token file not found: $TOKEN_FILE" >&2
@@ -40,7 +42,7 @@ if [[ -z "$RUNCLOUD_TOKEN" ]]; then
     exit 1
 fi
 
-for command in curl jq ssh; do
+for command in curl jq ssh mktemp; do
     if ! command -v "$command" >/dev/null 2>&1; then
         echo "ERROR: Required command not found: $command" >&2
         exit 1
@@ -97,6 +99,7 @@ ssh_command() {
     local host="$1"
     local username="$2"
     local command="$3"
+    local stderr_file="$4"
 
     ssh \
         -i "$SSH_KEY" \
@@ -105,7 +108,8 @@ ssh_command() {
         -o ConnectTimeout=10 \
         -o StrictHostKeyChecking=accept-new \
         "${username}@${host}" \
-        "$command"
+        "$command" \
+        2>"$stderr_file"
 }
 
 printf '%-20s %-16s %-28s %-24s %-32s %s\n' \
@@ -155,13 +159,50 @@ while IFS= read -r server; do
         fi
 
         remote_command="cd $(printf '%q' "$app_path") && wp user list --role=administrator --fields=ID,user_login,user_email,user_registered --format=csv --skip-plugins --skip-themes"
+        stderr_file="$(mktemp)"
 
-        admin_csv="$(ssh_command "$server_ip" "$ssh_user" "$remote_command" 2>/dev/null)"
+        if [[ "$DEBUG" == "1" ]]; then
+            echo "DEBUG: Server=${server_name} IP=${server_ip}" >&2
+            echo "DEBUG: App=${app_name} ID=${app_id}" >&2
+            echo "DEBUG: SSH user=${ssh_user}" >&2
+            echo "DEBUG: App path=${app_path}" >&2
+            echo "DEBUG: SSH key=${SSH_KEY}" >&2
+            echo "DEBUG: Running WP-CLI query" >&2
+        fi
+
+        admin_csv="$(ssh_command "$server_ip" "$ssh_user" "$remote_command" "$stderr_file")"
         ssh_status=$?
+        ssh_error="$(<"$stderr_file")"
+        rm -f "$stderr_file"
 
         if (( ssh_status != 0 )); then
-            echo "WARN: ${server_name}/${app_name}: SSH/WP-CLI query failed." >&2
+            echo "" >&2
+            echo "ERROR: SSH/WP-CLI query failed" >&2
+            echo "  Server:       $server_name" >&2
+            echo "  IP:           $server_ip" >&2
+            echo "  App:          $app_name (ID $app_id)" >&2
+            echo "  SSH user:     $ssh_user" >&2
+            echo "  App path:     $app_path" >&2
+            echo "  Exit code:    $ssh_status" >&2
+
+            if [[ -n "$ssh_error" ]]; then
+                echo "  Error:" >&2
+                while IFS= read -r error_line; do
+                    echo "    $error_line" >&2
+                done <<< "$ssh_error"
+            else
+                echo "  Error:        No stderr output was returned." >&2
+            fi
+
+            if (( ssh_status == 255 )); then
+                echo "  Hint:         Exit 255 normally indicates an SSH connection/authentication problem." >&2
+            fi
+
             continue
+        fi
+
+        if [[ "$DEBUG" == "1" ]]; then
+            echo "DEBUG: SSH succeeded; WP-CLI returned successfully." >&2
         fi
 
         [[ -z "$admin_csv" ]] && continue
