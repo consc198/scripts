@@ -1,0 +1,6 @@
+central/.env
+*.pyc
+__pycache__/
+.vault/
+ansible/inventory.ini
+ansible/group_vars/*/vault.yml
