@@ -3,7 +3,7 @@
   become: true
   vars:
     central_api_url: "https://security.example.com"
-    lmd_install_url: "https://raw.githubusercontent.com/rfxn/linux-malware-detect/2.0.1/install.sh"
+    lmd_install_url: "https://raw.githubusercontent.com/rfxn/linux-malware-detect/v2.0.1/install.sh"
     lmd_site_root: "/var/www/html"
     agent_id: "{{ inventory_hostname }}"
     agent_secret: "{{ vault_agent_secrets[inventory_hostname] }}"
