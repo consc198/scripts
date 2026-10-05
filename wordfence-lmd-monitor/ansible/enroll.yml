@@ -1,0 +1,50 @@
+---
+- name: Enroll WordPress security monitoring agents
+  hosts: wordpress
+  become: true
+  gather_facts: true
+  vars:
+    security_monitor_url: "https://security.example.com"
+    enrollment_token: "{{ vault_enrollment_token }}"
+    agent_config_dir: /etc/security-monitor
+  tasks:
+    - name: Create agent configuration directory
+      ansible.builtin.file:
+        path: "{{ agent_config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Install enrollment script
+      ansible.builtin.copy:
+        src: ../agent/enroll.sh
+        dest: /usr/local/sbin/security-monitor-enroll
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Enroll host once
+      ansible.builtin.command:
+        cmd: /usr/local/sbin/security-monitor-enroll
+      environment:
+        SECURITY_MONITOR_URL: "{{ security_monitor_url }}"
+        ENROLLMENT_TOKEN: "{{ enrollment_token }}"
+        HOSTNAME_VALUE: "{{ ansible_fqdn }}"
+        SITE_URL: "{{ site_url | default('') }}"
+      register: enrollment_result
+      no_log: true
+      changed_when: true
+      when: not (agent_config_dir + '/credentials.json') is file
+
+    - name: Store enrollment response
+      ansible.builtin.copy:
+        content: "{{ enrollment_result.stdout }}\n"
+        dest: "{{ agent_config_dir }}/credentials.json"
+        owner: root
+        group: root
+        mode: '0600'
+      when:
+        - enrollment_result is defined
+        - enrollment_result.stdout is defined
+        - enrollment_result.stdout | length > 0
