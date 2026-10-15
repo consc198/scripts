@@ -33,30 +33,37 @@ api_get() {
     -H "${AUTH_HEADER}" -H "Accept: application/json" "${API_BASE}${1}"
 }
 
-# Combine the .data arrays from every page of a paginated endpoint.
+# Stream records to a temporary file so large accounts do not exceed ARG_MAX.
 fetch_all() {
-  local endpoint="$1" page=1 response total_pages separator result='[]'
+  local endpoint="$1" page=1 response total_pages separator items_file
+  items_file="$(mktemp)"
   while true; do
     separator='?'
     [[ "${endpoint}" == *'?'* ]] && separator='&'
-    response="$(api_get "${endpoint}${separator}page=${page}&perPage=40")"
-
-    jq -e '.data | type == "array"' >/dev/null <<< "${response}" || {
-      echo "Unexpected API response from ${endpoint} (page ${page})." >&2
+    response="$(api_get "${endpoint}${separator}page=${page}&perPage=40")" || {
+      rm -f "${items_file}"
       return 1
     }
 
-    result="$(jq -cn --argjson old "${result}" \
-      --argjson new "$(jq '.data' <<< "${response}")" '$old + $new')"
+    jq -e '.data | type == "array"' >/dev/null <<< "${response}" || {
+      echo "Unexpected API response from ${endpoint} (page ${page})." >&2
+      rm -f "${items_file}"
+      return 1
+    }
+
+    jq -c '.data[]' <<< "${response}" >> "${items_file}"
     total_pages="$(jq -r '.meta.pagination.total_pages // .meta.pagination.totalPages // 1' <<< "${response}")"
     [[ "${total_pages}" =~ ^[0-9]+$ ]] || {
       echo "Could not read pagination metadata for ${endpoint}." >&2
+      rm -f "${items_file}"
       return 1
     }
     (( page >= total_pages )) && break
     ((page += 1))
   done
-  printf '%s\n' "${result}"
+
+  jq -s '.' "${items_file}"
+  rm -f "${items_file}"
 }
 
 echo "Fetching all RunCloud servers..."
