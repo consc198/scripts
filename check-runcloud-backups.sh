@@ -16,6 +16,7 @@ API_BASE="https://manage.runcloud.io/api/v3"
 AUTH_HEADER="Authorization: Bearer ${RUNCLOUD_TOKEN}"
 missing=0
 checked=0
+skipped=0
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 
@@ -73,6 +74,14 @@ while IFS=$'\t' read -r server_id server_name; do
 
   while IFS=$'\t' read -r app_id app_name; do
     [[ -n "${app_id}" ]] || continue
+
+    # phpMyAdmin is an administration tool, not an application requiring this audit.
+    if [[ "${app_name}" =~ [Pp][Hh][Pp][Mm][Yy][Aa][Dd][Mm][Ii][Nn] ]]; then
+      printf 'SKIP    %s (ID %s) — phpMyAdmin excluded\n' "${app_name}" "${app_id}"
+      ((skipped += 1))
+      continue
+    fi
+
     ((checked += 1))
 
     if jq -s -e --argjson id "${app_id}" '
@@ -91,6 +100,7 @@ done < <(jq -r '[.id, (.name // "unnamed")] | @tsv' "${servers_file}")
 
 echo
 echo "Applications checked: ${checked}"
+echo "phpMyAdmin applications skipped: ${skipped}"
 echo "Applications without an active backup configuration: ${missing}"
 if (( checked == 0 )); then
   echo "ERROR: No applications were checked; refusing to report success." >&2
