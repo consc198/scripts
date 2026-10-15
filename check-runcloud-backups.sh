@@ -3,7 +3,7 @@
 # Requirements: curl, jq, and a RunCloud API v3 token.
 #
 # Usage:
-#   printf "%s\\n" "your-api-token" > token.txt
+#   printf "%s\n" "your-api-token" > token.txt
 #   chmod 600 token.txt
 #   bash check-runcloud-backups.sh
 #
@@ -17,7 +17,7 @@ TOKEN_FILE="${SCRIPT_DIR}/token.txt"
   echo "Missing or unreadable token file: ${TOKEN_FILE}" >&2
   exit 1
 }
-RUNCLOUD_TOKEN="$(tr -d '\\r\\n' < "${TOKEN_FILE}")"
+RUNCLOUD_TOKEN="$(tr -d '\r\n' < "${TOKEN_FILE}")"
 [[ -n "${RUNCLOUD_TOKEN}" ]] || {
   echo "Token file is empty: ${TOKEN_FILE}" >&2
   exit 1
