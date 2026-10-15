@@ -72,7 +72,43 @@ while IFS=$'\t' read -r server_id server_name; do
   apps_file="${WORK_DIR}/apps-${server_id}.jsonl"
   fetch_all_to_file "/servers/${server_id}/webapps" "${apps_file}"
 
-  while IFS=$'\t' read -r app_id app_name; do
+  while IFS=
+    [[ -n "${app_id}" ]] || continue
+
+    # Exclude by RunCloud's Application Type field, not by the app's name.
+    if [[ "${app_type,,}" == "phpmyadmin" ]]; then
+      printf 'SKIP    %s (ID %s; type: %s) — phpMyAdmin excluded\n' "${app_name}" "${app_id}" "${app_type}"
+      ((skipped += 1))
+      continue
+    fi
+
+    ((checked += 1))
+
+    if jq -s -e --argjson id "${app_id}" '
+      any(.[]?;
+        ((.items.webApplicationId // .webApplicationId // .web_application_id) == $id)
+        and ((.status // "") == "active")
+      )
+    ' "${backups_file}" >/dev/null; then
+      printf 'OK      %s (ID %s)\n' "${app_name}" "${app_id}"
+    else
+      printf 'MISSING %s (ID %s)\n' "${app_name}" "${app_id}"
+      ((missing += 1))
+    fi
+  done < <(jq -r '[.id, (.name // "unnamed"), (.applicationType // .application_type // .appType // .type // "")] | @tsv' "${apps_file}")
+done < <(jq -r '[.id, (.name // "unnamed")] | @tsv' "${servers_file}")
+
+echo
+echo "Applications checked: ${checked}"
+echo "phpMyAdmin applications skipped: ${skipped}"
+echo "Applications without an active backup configuration: ${missing}"
+if (( checked == 0 )); then
+  echo "ERROR: No applications were checked; refusing to report success." >&2
+  exit 2
+fi
+if (( missing > 0 )); then exit 1; fi
+echo "All applications have an active backup configuration."
+\t' read -r app_id app_name app_type; do
     [[ -n "${app_id}" ]] || continue
 
     # phpMyAdmin is an administration tool, not an application requiring this audit.
