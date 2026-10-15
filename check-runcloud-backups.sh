@@ -3,14 +3,25 @@
 # Requirements: curl, jq, and a RunCloud API v3 token.
 #
 # Usage:
-#   export RUNCLOUD_TOKEN="..."
+#   printf "%s\\n" "your-api-token" > token.txt
+#   chmod 600 token.txt
 #   bash check-runcloud-backups.sh
 #
 # Read-only: checks configuration status, not whether the latest backup succeeded.
 
 set -Eeuo pipefail
 
-: "${RUNCLOUD_TOKEN:?Set RUNCLOUD_TOKEN to your RunCloud API token first}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+TOKEN_FILE="${SCRIPT_DIR}/token.txt"
+[[ -f "${TOKEN_FILE}" && -r "${TOKEN_FILE}" ]] || {
+  echo "Missing or unreadable token file: ${TOKEN_FILE}" >&2
+  exit 1
+}
+RUNCLOUD_TOKEN="$(tr -d '\\r\\n' < "${TOKEN_FILE}")"
+[[ -n "${RUNCLOUD_TOKEN}" ]] || {
+  echo "Token file is empty: ${TOKEN_FILE}" >&2
+  exit 1
+}
 
 API_BASE="https://manage.runcloud.io/api/v3"
 AUTH_HEADER="Authorization: Bearer ${RUNCLOUD_TOKEN}"
