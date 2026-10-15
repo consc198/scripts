@@ -55,6 +55,11 @@ servers_file="${WORK_DIR}/servers.jsonl"
 backups_file="${WORK_DIR}/backups.jsonl"
 echo "Fetching all RunCloud servers..."
 fetch_all_to_file "/servers" "${servers_file}"
+if [[ ! -s "${servers_file}" ]]; then
+  echo "ERROR: RunCloud returned no servers; refusing to report success." >&2
+  exit 2
+fi
+
 echo "Fetching backup configurations..."
 fetch_all_to_file "/backups" "${backups_file}"
 
@@ -87,5 +92,9 @@ done < <(jq -r '[.id, (.name // "unnamed")] | @tsv' "${servers_file}")
 echo
 echo "Applications checked: ${checked}"
 echo "Applications without an active backup configuration: ${missing}"
+if (( checked == 0 )); then
+  echo "ERROR: No applications were checked; refusing to report success." >&2
+  exit 2
+fi
 if (( missing > 0 )); then exit 1; fi
 echo "All applications have an active backup configuration."
