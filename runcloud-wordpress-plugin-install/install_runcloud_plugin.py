@@ -91,7 +91,7 @@ def run_as_webapp_user(host, webapp_user, root_path, wp_args):
 
 def version_tuple(version):
     """Compare numeric WordPress versions without requiring another dependency."""
-    match = re.match(r"^\\s*(\\d+(?:\\.\\d+)*)(?:[-+].*)?\\s*$", version)
+    match = re.match(r"^\s*(\d+(?:\.\d+)*)(?:[-+].*)?\s*$", version)
     if not match:
         raise ValueError(f"Unrecognized WordPress version: {version!r}")
     return tuple(int(part) for part in match.group(1).split("."))
