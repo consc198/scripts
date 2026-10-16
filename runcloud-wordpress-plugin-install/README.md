@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-Discovers WordPress web applications through the RunCloud API and force-installs and activates a plugin ZIP on eligible sites using root SSH and WP-CLI.
+Discovers WordPress web applications through the RunCloud API and force-installs and activates the repository-hosted plugin ZIP on eligible sites using root SSH and WP-CLI.
 
 ## What it does
 
@@ -12,13 +12,13 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 6. Installs and activates the plugin:
 
 ```bash
-wp plugin install https://conversal.be/admin-menu-editor-pro-2.37.zip --force --activate
+wp plugin install /tmp/conversal-admin-3.0.4.zip --force --activate (after download and SHA-256 verification)
 ```
 
 ## Requirements
 
 - Python 3
-- `curl`
+- `curl` and `sha256sum` on the target servers (for downloading and verifying the plugin ZIP)
 - RunCloud API v3 token
 - Root SSH key access to the target servers
 - WP-CLI and `sudo` on the servers
@@ -68,5 +68,7 @@ A dry run does not install the plugin. With a minimum version specified, it repo
 ## Reports
 
 The script prints counts for successful installations, version-based skips, and failures. It writes a JSON report to `runcloud-plugin-install.json` by default and exits with code `2` if any site fails.
+
+The installer downloads `conversal-admin-3.0.4.zip` from this public repository and verifies its pinned SHA-256 checksum before installation. If the downloaded file does not match the expected checksum, installation stops. To update the plugin ZIP, upload the replacement and update `PLUGIN_SHA256` in the script to the replacement file's independently computed SHA-256.
 
 Existing plugin installations are overwritten because `--force` is used. The plugin is activated automatically on sites that meet the version requirement.
