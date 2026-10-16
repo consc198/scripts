@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
-PLUGIN_URL = "https://conversal.be/admin-menu-editor-pro-2.37.zip"
+PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/conversal-admin-3.0.4.zip"
+PLUGIN_SHA256 = "1e2e98cbcd8fa20da8f996f82f91ca58feac210e434461f1c2b01cdd7c003ff6"
 SSH_PORT = 22
 SSH_USER = "root"
 
@@ -123,11 +124,17 @@ def install_plugin(server, webapp, webapp_user, dry_run, minimum_version=None):
     else:
         installed_version = None
 
+    # Download as root, verify the pinned SHA-256, then install as the site's Linux user.
+    # The checksum prevents a changed/replaced public ZIP from being installed silently.
     inner = (
-        f"cd {shlex.quote(root_path)} && "
-        f"wp plugin install {shlex.quote(PLUGIN_URL)} --force --activate"
+        "set -eu; "
+        "archive=$(mktemp /tmp/conversal-admin-3.0.4.XXXXXX.zip); "
+        "trap 'rm -f \"$archive\"' EXIT; "
+        f"curl --fail --silent --show-error --location --max-time 120 {shlex.quote(PLUGIN_URL)} -o \"$archive\"; "
+        f"printf '%s  %s\\n' {shlex.quote(PLUGIN_SHA256)} \"$archive\" | sha256sum --check --status; "
+        f"sudo -u {shlex.quote(webapp_user)} -- sh -c {shlex.quote('cd ' + shlex.quote(root_path) + ' && wp plugin install \"$1\" --force --activate')} sh \"$archive\""
     )
-    command = f"sudo -u {shlex.quote(webapp_user)} -- sh -c {shlex.quote(inner)}"
+    command = f"sh -c {shlex.quote(inner)}"
 
     if dry_run:
         print(f"[DRY-RUN] {server_name} / {webapp_name}\n          SSH: {SSH_USER}@{host}:{SSH_PORT}\n          Run as: {webapp_user}\n          Path: {root_path}\n          CMD:  {command}")
