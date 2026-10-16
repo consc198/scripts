@@ -132,6 +132,7 @@ def install_plugin(server, webapp, webapp_user, dry_run, minimum_version=None):
         "trap 'rm -f \"$archive\"' EXIT; "
         f"curl --fail --silent --show-error --location --max-time 120 {shlex.quote(PLUGIN_URL)} -o \"$archive\"; "
         f"printf '%s  %s\\n' {shlex.quote(PLUGIN_SHA256)} \"$archive\" | sha256sum --check --status; "
+        "chmod 644 \"$archive\"; "
         f"sudo -u {shlex.quote(webapp_user)} -- sh -c {shlex.quote('cd ' + shlex.quote(root_path) + ' && wp plugin install \"$1\" --force --activate')} sh \"$archive\""
     )
     command = f"sh -c {shlex.quote(inner)}"
