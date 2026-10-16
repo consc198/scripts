@@ -149,7 +149,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
     parser.add_argument("--server", help="RunCloud server ID or exact server name. Omit to process all servers.")
     parser.add_argument("--min-wp-version", help="Minimum WordPress version required for installation (e.g. 6.4.2). Older sites are skipped.")
-    parser.add_argument("--token", default=os.getenv("RUNCloud_API_TOKEN"))
+    parser.add_argument("--token", help="RunCloud API token (overrides environment variable and token.txt).")
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
 
@@ -158,12 +158,21 @@ def main():
             version_tuple(args.min_wp_version)
         except ValueError as exc:
             parser.error(str(exc))
-    if not args.token:
-        parser.error("Set RUNCloud_API_TOKEN or use --token.")
+    token = args.token or os.getenv("RUNCloud_API_TOKEN")
+    if not token:
+        token_file = Path(__file__).resolve().with_name("token.txt")
+        try:
+            token = token_file.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            token = None
+        except OSError as exc:
+            parser.error(f"Could not read {token_file}: {exc}")
+    if not token:
+        parser.error("Provide --token, set RUNCloud_API_TOKEN, or put the API token in token.txt next to this script.")
 
     try:
-        print(f"RunCloud API: {api_get(args.token, '/ping')}")
-        servers = get_all_pages(args.token, "/servers")
+        print(f"RunCloud API: {api_get(token, '/ping')}")
+        servers = get_all_pages(token, "/servers")
     except Exception as exc:
         print(f"RunCloud API error: {exc}")
         sys.exit(1)
@@ -190,7 +199,7 @@ def main():
         server_name = server.get("name", f"server-{server_id}")
         print(f"\\n[{server_name}] ({server.get('ipAddress', 'unknown IP')})")
         try:
-            webapps = get_all_pages(args.token, f"/servers/{server_id}/webapps")
+            webapps = get_all_pages(token, f"/servers/{server_id}/webapps")
         except Exception as exc:
             print(f"  ERROR listing web apps: {exc}")
             results.append({"server_id": server_id, "server": server_name, "status": "failed", "message": f"Web-app discovery failed: {exc}"})
@@ -204,7 +213,7 @@ def main():
             webapp_user = None
             installed_version = None
             try:
-                webapp_user = get_webapp_ssh_user(args.token, server_id, app)
+                webapp_user = get_webapp_ssh_user(token, server_id, app)
                 status, message, installed_version = install_plugin(
                     server, app, webapp_user, args.dry_run, args.min_wp_version
                 )
