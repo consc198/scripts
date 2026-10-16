@@ -23,11 +23,13 @@ wp plugin install https://conversal.be/admin-menu-editor-pro-2.37.zip --force --
 - Root SSH key access to the target servers
 - WP-CLI and `sudo` on the servers
 
-Set the API token:
+Store the API token in a local `token.txt` file next to the script, with only the token on the first line:
 
-```bash
-export RUNCloud_API_TOKEN='YOUR_RUNCLOUD_API_TOKEN'
+```text
+YOUR_RUNCLOUD_API_TOKEN
 ```
+
+The script checks for credentials in this order: `--token`, the `RUNCloud_API_TOKEN` environment variable, then `token.txt` beside the script. Keep `token.txt` private; it is excluded from Git by `.gitignore`.
 
 ## Choose servers
 
