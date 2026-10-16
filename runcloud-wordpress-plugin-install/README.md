@@ -1,90 +1,70 @@
 # RunCloud WordPress Plugin Installer
 
-Discovers WordPress web applications through the RunCloud API and force-installs and activates a plugin ZIP on each site using root SSH and WP-CLI.
+Discovers WordPress web applications through the RunCloud API and force-installs and activates a plugin ZIP on eligible sites using root SSH and WP-CLI.
 
 ## What it does
 
-1. Lists RunCloud servers.
-2. Lists web apps for each server.
-3. Selects web apps whose type is `wordpress`.
-4. Reads the web app's `server_user_id`.
-5. Resolves that ID through RunCloud's system-user API and obtains the Linux username.
-6. Uses the RunCloud-provided `rootPath`.
-7. Connects to each server over SSH as `root` on port `22`.
-8. Uses `sudo -u <web-app-user>` so WP-CLI runs as the WordPress site's Linux user.
-9. Runs:
+1. Lists RunCloud servers (all servers by default, or one selected with `--server`).
+2. Finds WordPress web apps and resolves each app's RunCloud system user.
+3. Connects to each selected server as `root` over SSH port `22`.
+4. Runs WP-CLI as the app's Linux user using `sudo -u`.
+5. Optionally checks the site's WordPress version and skips sites below a specified minimum.
+6. Installs and activates the plugin:
 
 ```bash
 wp plugin install https://conversal.be/admin-menu-editor-pro-2.37.zip --force --activate
 ```
 
-The plugin is installed and activated automatically.
-
 ## Requirements
 
 - Python 3
-- `requests`
+- `curl`
 - RunCloud API v3 token
-- SSH access to each RunCloud server as `root`
-- WP-CLI installed on the servers
-- `sudo` available on the servers
+- Root SSH key access to the target servers
+- WP-CLI and `sudo` on the servers
 
-Install the Python dependency:
-
-```bash
-python3 -m pip install -r requirements.txt
-```
-
-## Credentials
-
-Set the RunCloud API token:
+Set the API token:
 
 ```bash
 export RUNCloud_API_TOKEN='YOUR_RUNCLOUD_API_TOKEN'
 ```
 
-No `RC_SSH_USER` or `RC_SSH_PORT` variable is required. SSH always connects as `root` on port `22`. The WordPress Linux user is resolved automatically from RunCloud and used with `sudo -u` for the WP-CLI command.
+## Choose servers
 
-SSH key authentication is recommended. The machine running this script must have a root SSH key accepted by the target RunCloud servers.
-
-Do not commit credentials to Git.
-
-## Dry run
-
-Always inspect discovery first:
-
-```bash
-python3 install_runcloud_plugin.py --dry-run
-```
-
-The dry run shows the root SSH connection and the detected WordPress user that WP-CLI will run as.
-
-## Install
-
-After verifying the dry-run output:
+Process all servers:
 
 ```bash
 python3 install_runcloud_plugin.py
 ```
 
-At the end, the script prints a summary containing:
+Process one server by RunCloud ID or exact name:
 
-- total servers discovered
-- total WordPress sites found
-- successful installations/activations
-- failed sites
-- the exact failure reason returned by RunCloud, SSH, or WP-CLI
-- the affected server, site, root SSH target, run-as user, and WordPress path when available
+```bash
+python3 install_runcloud_plugin.py --server 12345
+python3 install_runcloud_plugin.py --server "Production Server"
+```
 
-A machine-readable JSON report is also written to `runcloud-plugin-install.json`.
+## Minimum WordPress version
 
-The script exits with code `2` if one or more sites fail, making failures detectable from automation or CI systems.
+Use `--min-wp-version` to set the minimum WordPress version required for installation. Sites with an older version are skipped without installing or activating the plugin.
 
-## Notes
+```bash
+python3 install_runcloud_plugin.py --min-wp-version 6.4.2
+python3 install_runcloud_plugin.py --server 12345 --min-wp-version 6.4.2 --dry-run
+```
 
-- The script continues after individual site failures.
-- Existing plugin installations are overwritten because `--force` is used.
-- The plugin is activated automatically after installation.
-- SSH always uses `root@server-ip:22`.
-- WP-CLI runs as the RunCloud system user associated with each web app via `sudo -u`.
-- Review the ZIP source and permissions before running against production sites.
+Version comparison is numeric, so `6.10` is newer than `6.9`. If the script cannot determine a site's WordPress version when a minimum is set, it fails that site safely rather than installing the plugin without checking.
+
+## Dry run
+
+```bash
+python3 install_runcloud_plugin.py --dry-run
+```
+
+A dry run does not install the plugin. With a minimum version specified, it reports that the version check would be performed; run without `--dry-run` to actually check versions and install eligible sites.
+
+## Reports
+
+The script prints counts for successful installations, version-based skips, and failures. It writes a JSON report to `runcloud-plugin-install.json` by default and exits with code `2` if any site fails.
+
+Existing plugin installations are overwritten because `--force` is used. The plugin is activated automatically on sites that meet the version requirement.
