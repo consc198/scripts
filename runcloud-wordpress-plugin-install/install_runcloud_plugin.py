@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Discover WordPress apps in RunCloud and force-install + activate a plugin ZIP via root SSH and sudo."""
+"""Discover RunCloud WordPress apps and force-install + activate a plugin ZIP."""
 
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -17,7 +18,7 @@ SSH_USER = "root"
 
 
 def api_get(token, path, params=None):
-    """Call the RunCloud API using the system curl client."""
+    """Call the RunCloud API using curl."""
     url = f"{RUN_CLOUD_API}{path}"
     cmd = [
         "curl", "--silent", "--show-error", "--fail-with-body",
@@ -26,21 +27,17 @@ def api_get(token, path, params=None):
         "-H", "Accept: application/json",
         "-H", "Content-Type: application/json",
     ]
-
     if params:
         query = "&".join(
             f"{shlex.quote(str(k))}={shlex.quote(str(v))}"
             for k, v in params.items()
         )
         url = f"{url}?{query}"
-
     cmd.append(url)
     result = subprocess.run(cmd, text=True, capture_output=True)
-
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or f"curl exit code {result.returncode}"
         raise RuntimeError(f"RunCloud API request failed: {detail}")
-
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError as exc:
@@ -65,7 +62,6 @@ def get_all_pages(token, path):
 
 
 def get_webapp_ssh_user(token, server_id, webapp):
-    """Resolve the RunCloud system-user username owning the web app."""
     user_id = webapp.get("server_user_id")
     if user_id is None:
         raise RuntimeError(f"Web app {webapp.get('name', webapp.get('id'))} has no server_user_id")
@@ -77,33 +73,65 @@ def get_webapp_ssh_user(token, server_id, webapp):
 
 
 def ssh_run(host, command):
-    """Connect as root over SSH; the command itself switches to the web-app user."""
     return subprocess.run([
         "ssh", "-p", str(SSH_PORT), "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=15", f"{SSH_USER}@{host}", command
     ], text=True, capture_output=True)
 
 
-def install_plugin(server, webapp, webapp_user, dry_run):
+def run_as_webapp_user(host, webapp_user, root_path, wp_args):
+    inner = f"cd {shlex.quote(root_path)} && wp {wp_args}"
+    command = f"sudo -u {shlex.quote(webapp_user)} -- sh -c {shlex.quote(inner)}"
+    result = ssh_run(host, command)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(detail)
+    return result.stdout.strip()
+
+
+def version_tuple(version):
+    """Compare numeric WordPress versions without requiring another dependency."""
+    match = re.match(r"^\\s*(\\d+(?:\\.\\d+)*)(?:[-+].*)?\\s*$", version)
+    if not match:
+        raise ValueError(f"Unrecognized WordPress version: {version!r}")
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
+def install_plugin(server, webapp, webapp_user, dry_run, minimum_version=None):
     host = server.get("ipAddress")
     root_path = webapp.get("rootPath")
     if not host:
-        return False, "No server IP address"
+        return "failed", "No server IP address", None
     if not root_path:
-        return False, "No web-app rootPath"
-
-    inner_command = (
-        f"cd {shlex.quote(root_path)} && "
-        f"wp plugin install {shlex.quote(PLUGIN_URL)} --force --activate"
-    )
-    command = f"sudo -u {shlex.quote(webapp_user)} -- sh -c {shlex.quote(inner_command)}"
+        return "failed", "No web-app rootPath", None
 
     server_name = server.get("name", f"server-{server['id']}")
     webapp_name = webapp.get("name", f"webapp-{webapp['id']}")
 
+    if minimum_version:
+        if dry_run:
+            print(f"[DRY-RUN] {server_name} / {webapp_name}: would check WordPress version against minimum {minimum_version}")
+            return "dry-run", f"Would check minimum WordPress version {minimum_version}; installation not run in dry-run mode", None
+        try:
+            installed_version = run_as_webapp_user(host, webapp_user, root_path, "core version")
+            if version_tuple(installed_version) < version_tuple(minimum_version):
+                message = f"Skipped: WordPress {installed_version} is older than minimum {minimum_version}"
+                print(f"[SKIP] {server_name} / {webapp_name}: {message}")
+                return "skipped", message, installed_version
+        except Exception as exc:
+            return "failed", f"Could not determine WordPress version safely: {exc}", None
+    else:
+        installed_version = None
+
+    inner = (
+        f"cd {shlex.quote(root_path)} && "
+        f"wp plugin install {shlex.quote(PLUGIN_URL)} --force --activate"
+    )
+    command = f"sudo -u {shlex.quote(webapp_user)} -- sh -c {shlex.quote(inner)}"
+
     if dry_run:
         print(f"[DRY-RUN] {server_name} / {webapp_name}\n          SSH: {SSH_USER}@{host}:{SSH_PORT}\n          Run as: {webapp_user}\n          Path: {root_path}\n          CMD:  {command}")
-        return True, "dry-run"
+        return "dry-run", "Installation not run in dry-run mode", installed_version
 
     print(f"[INSTALL+ACTIVATE] {server_name} / {webapp_name} ({host}) via root -> {webapp_user} -> {root_path}")
     result = ssh_run(host, command)
@@ -112,18 +140,24 @@ def install_plugin(server, webapp, webapp_user, dry_run):
     if result.returncode != 0:
         error = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
         print(f"  FAILED: {error}", file=sys.stderr)
-        return False, error
-    return True, "installed and activated"
+        return "failed", error, installed_version
+    return "success", "installed and activated", installed_version
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a remote plugin ZIP via root SSH.")
+    parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a plugin ZIP via root SSH.")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
     parser.add_argument("--server", help="RunCloud server ID or exact server name. Omit to process all servers.")
+    parser.add_argument("--min-wp-version", help="Minimum WordPress version required for installation (e.g. 6.4.2). Older sites are skipped.")
     parser.add_argument("--token", default=os.getenv("RUNCloud_API_TOKEN"))
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
 
+    if args.min_wp_version:
+        try:
+            version_tuple(args.min_wp_version)
+        except ValueError as exc:
+            parser.error(str(exc))
     if not args.token:
         parser.error("Set RUNCloud_API_TOKEN or use --token.")
 
@@ -135,11 +169,7 @@ def main():
         sys.exit(1)
 
     if args.server:
-        matches = [
-            server for server in servers
-            if str(server.get("id")) == str(args.server)
-            or server.get("name") == args.server
-        ]
+        matches = [s for s in servers if str(s.get("id")) == str(args.server) or s.get("name") == args.server]
         if not matches:
             print(f"No RunCloud server matched: {args.server}")
             print("Available servers:")
@@ -158,7 +188,7 @@ def main():
     for server in servers:
         server_id = server["id"]
         server_name = server.get("name", f"server-{server_id}")
-        print(f"\n[{server_name}] ({server.get('ipAddress', 'unknown IP')})")
+        print(f"\\n[{server_name}] ({server.get('ipAddress', 'unknown IP')})")
         try:
             webapps = get_all_pages(args.token, f"/servers/{server_id}/webapps")
         except Exception as exc:
@@ -172,11 +202,14 @@ def main():
         for app in wordpress_apps:
             wordpress_count += 1
             webapp_user = None
+            installed_version = None
             try:
                 webapp_user = get_webapp_ssh_user(args.token, server_id, app)
-                ok, message = install_plugin(server, app, webapp_user, args.dry_run)
+                status, message, installed_version = install_plugin(
+                    server, app, webapp_user, args.dry_run, args.min_wp_version
+                )
             except Exception as exc:
-                ok, message = False, str(exc)
+                status, message = "failed", str(exc)
                 print(f"  FAILED: {message}", file=sys.stderr)
 
             results.append({
@@ -190,40 +223,45 @@ def main():
                 "ssh_user": SSH_USER,
                 "run_as_user": webapp_user,
                 "rootPath": app.get("rootPath"),
-                "status": "success" if ok else "failed",
+                "wordpress_version": installed_version,
+                "minimum_wordpress_version": args.min_wp_version,
+                "status": status,
                 "message": message,
             })
 
     Path(args.output).write_text(json.dumps(results, indent=2), encoding="utf-8")
     successes = sum(r.get("status") == "success" for r in results)
+    skipped = [r for r in results if r.get("status") == "skipped"]
     failures = [r for r in results if r.get("status") == "failed"]
 
-    print("\n" + "=" * 72)
+    print("\\n" + "=" * 72)
     print("RUNCloud WORDPRESS PLUGIN INSTALLATION REPORT")
     print("=" * 72)
     print(f"Servers processed:        {len(servers)}")
     print(f"WordPress sites found:    {wordpress_count}")
     print(f"Successful:               {successes}")
+    print(f"Skipped (version):        {len(skipped)}")
     print(f"Failed:                   {len(failures)}")
+    print(f"Minimum WP version:       {args.min_wp_version or 'not set'}")
     print(f"Results file:             {args.output}")
 
-    if failures:
-        print("\nFAILURES")
-        print("-" * 72)
-        for index, failure in enumerate(failures, 1):
-            print(f"{index}. {failure.get('server', 'unknown server')} / {failure.get('webapp', 'unknown site')}")
-            print(f"   Reason:    {failure.get('message', 'Unknown failure')}")
-            if failure.get("rootPath"):
-                print(f"   Path:      {failure['rootPath']}")
-            if failure.get("server_ip"):
-                print(f"   SSH:       {SSH_USER}@{failure['server_ip']}:{SSH_PORT}")
-            if failure.get("run_as_user"):
-                print(f"   Run as:    {failure['run_as_user']}")
-    else:
-        print("\nNo failures. All discovered WordPress sites completed successfully.")
+    for heading, entries in (("SKIPPED SITES", skipped), ("FAILURES", failures)):
+        if entries:
+            print(f"\\n{heading}")
+            print("-" * 72)
+            for index, entry in enumerate(entries, 1):
+                print(f"{index}. {entry.get('server', 'unknown server')} / {entry.get('webapp', 'unknown site')}")
+                print(f"   Reason: {entry.get('message', 'Unknown')}")
+                if entry.get("wordpress_version"):
+                    print(f"   WordPress: {entry['wordpress_version']}")
+                if entry.get("rootPath"):
+                    print(f"   Path: {entry['rootPath']}")
+                if entry.get("server_ip"):
+                    print(f"   SSH: {SSH_USER}@{entry['server_ip']}:{SSH_PORT}")
 
+    if not failures:
+        print("\\nNo failures.")
     print("=" * 72)
-
     if failures:
         sys.exit(2)
 
