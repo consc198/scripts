@@ -157,7 +157,8 @@ def main():
     parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a plugin ZIP via root SSH.")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
     parser.add_argument("--server", help="RunCloud server ID or exact server name. Omit to process all servers.")
-    parser.add_argument("--webapp", help="Install only to one WordPress web app, by RunCloud web app ID or exact name. Names must match uniquely.")
+    parser.add_argument("--webapp", action="append", help="Target a WordPress web app by RunCloud web app ID or exact name. May be repeated; names must match uniquely.")
+    parser.add_argument("--webapps-file", help="Text file containing target web app IDs or exact names, one per line. Blank lines and lines starting with # are ignored.")
     parser.add_argument("--min-wp-version", help="Minimum WordPress version required for installation (e.g. 6.4.2). Older sites are skipped.")
     parser.add_argument("--token", help="RunCloud API token (overrides environment variable and token.txt).")
     parser.add_argument("--output", default="runcloud-plugin-install.json")
@@ -221,31 +222,73 @@ def main():
             print(f"  ERROR listing web apps: {exc}")
             discovery_failures.append({"server_id": server_id, "server": server_name, "status": "failed", "message": f"Web-app discovery failed: {exc}"})
 
-    if args.webapp:
-        candidates = [
-            (server, app)
-            for server in servers
-            for app in webapps_by_server.get(server["id"], [])
-            if app.get("type") == "wordpress"
-            and (str(app.get("id")) == str(args.webapp) or app.get("name") == args.webapp)
-        ]
-        if not candidates:
-            print(f"No WordPress web app matched: {args.webapp}")
-            print("Use a RunCloud web app ID or an exact name. Available WordPress web apps:")
+    target_names = list(args.webapp or [])
+    if args.webapps_file:
+        try:
+            with Path(args.webapps_file).expanduser().open("r", encoding="utf-8") as handle:
+                target_names.extend(
+                    line.strip()
+                    for line in handle
+                    if line.strip() and not line.lstrip().startswith("#")
+                )
+        except OSError as exc:
+            parser.error(f"Could not read web-app list file {args.webapps_file}: {exc}")
+
+    selected_apps_by_server = {}
+    if target_names:
+        if discovery_failures:
+            print("Cannot safely resolve targeted web apps because web-app discovery failed for at least one selected server.")
+            sys.exit(1)
+
+        matched_by_identity = {}
+        unresolved = []
+        ambiguous = []
+        for target in target_names:
+            candidates = [
+                (server, app)
+                for server in servers
+                for app in webapps_by_server.get(server["id"], [])
+                if app.get("type") == "wordpress"
+                and (str(app.get("id")) == str(target) or app.get("name") == target)
+            ]
+            # Multiple lines may point to the same app; treat it as one match.
+            unique = {(str(server["id"]), str(app.get("id"))): (server, app) for server, app in candidates}
+            candidates = list(unique.values())
+            if not candidates:
+                unresolved.append(target)
+            elif len(candidates) > 1:
+                ambiguous.append((target, candidates))
+            else:
+                server, app = candidates[0]
+                matched_by_identity[(str(server["id"]), str(app.get("id")))] = (server, app)
+
+        if unresolved or ambiguous:
+            if unresolved:
+                print("No WordPress web app matched these target entries:")
+                for target in unresolved:
+                    print(f"  {target}")
+            if ambiguous:
+                print("These target entries matched multiple web apps; use a unique web-app ID:")
+                for target, candidates in ambiguous:
+                    print(f"  {target}")
+                    for server, app in candidates:
+                        print(f"    server {server.get('id')} / web app {app.get('id')} - {app.get('name', 'unnamed')}")
+            print("Available WordPress web apps:")
             for server in servers:
                 for app in webapps_by_server.get(server["id"], []):
                     if app.get("type") == "wordpress":
                         print(f"  server {server.get('id')} / web app {app.get('id')} - {app.get('name', 'unnamed')}")
             sys.exit(1)
-        if len(candidates) > 1:
-            print(f"Web app name/ID '{args.webapp}' matched multiple sites. Re-run using a unique web app ID.")
-            for server, app in candidates:
-                print(f"  server {server.get('id')} / web app {app.get('id')} - {app.get('name', 'unnamed')}")
-            sys.exit(1)
-        selected_server, selected_app = candidates[0]
-        print(f"Selected web app: {selected_app.get('name', selected_app.get('id'))} (ID {selected_app.get('id')}) on {selected_server.get('name', selected_server.get('id'))}")
-        servers = [selected_server]
-        webapps_by_server[selected_server["id"]] = [selected_app]
+
+        for server, app in matched_by_identity.values():
+            selected_apps_by_server.setdefault(server["id"], []).append(app)
+        servers = [
+            server for server in servers
+            if server["id"] in selected_apps_by_server
+        ]
+        for server in servers:
+            webapps_by_server[server["id"]] = selected_apps_by_server[server["id"]]
+        print(f"Selected {len(matched_by_identity)} specific WordPress web app(s).")
 
     results.extend(discovery_failures)
 
