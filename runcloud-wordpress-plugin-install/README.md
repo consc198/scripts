@@ -46,6 +46,18 @@ python3 install_runcloud_plugin.py --server 12345
 python3 install_runcloud_plugin.py --server "Production Server"
 ```
 
+## Choose one web app
+
+Use `--webapp` to target a single WordPress web app by its RunCloud web app ID or exact name. This option installs only to the matching site, not every WordPress site on the server. If a name matches more than one site, the script stops and asks you to use a unique web app ID.
+
+```bash
+python3 install_runcloud_plugin.py --webapp 67890
+python3 install_runcloud_plugin.py --webapp "example.com"
+python3 install_runcloud_plugin.py --server 12345 --webapp 67890 --min-wp-version 6.4.2 --dry-run
+```
+
+When using `--server` and `--webapp` together, the web app must belong to the selected server.
+
 ## Minimum WordPress version
 
 Use `--min-wp-version` to set the minimum WordPress version required for installation. Sites with an older version are skipped without installing or activating the plugin.
