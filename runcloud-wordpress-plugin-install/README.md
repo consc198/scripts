@@ -12,7 +12,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 6. Installs and activates the plugin:
 
 ```bash
-wp plugin install /tmp/conversal-admin-3.0.4.zip --force --activate (after download and SHA-256 verification)
+wp --skip-plugins plugin install /tmp/conversal-admin-3.0.4.zip --force --activate (after download and SHA-256 verification)
 ```
 
 ## Requirements
@@ -101,4 +101,4 @@ The script prints counts for successful installations, version-based skips, and 
 
 The installer downloads `conversal-admin-3.0.4.zip` from this public repository and verifies its pinned SHA-256 checksum before installation. If the downloaded file does not match the expected checksum, installation stops. To update the plugin ZIP, upload the replacement and update `PLUGIN_SHA256` in the script to the replacement file's independently computed SHA-256.
 
-Existing plugin installations are overwritten because `--force` is used. The plugin is activated automatically on sites that meet the version requirement.
+Existing plugin installations are overwritten because `--force` is used. The plugin is activated automatically on sites that meet the version requirement. The install command uses WP-CLI’s `--skip-plugins` flag so existing plugins are not loaded during the install command; this does not mean the newly installed plugin will remain inactive.
