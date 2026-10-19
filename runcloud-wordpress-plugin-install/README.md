@@ -46,17 +46,35 @@ python3 install_runcloud_plugin.py --server 12345
 python3 install_runcloud_plugin.py --server "Production Server"
 ```
 
-## Choose one web app
+## Choose specific web apps
 
-Use `--webapp` to target a single WordPress web app by its RunCloud web app ID or exact name. This option installs only to the matching site, not every WordPress site on the server. If a name matches more than one site, the script stops and asks you to use a unique web app ID.
+Use `--webapp` to target a WordPress web app by its RunCloud web app ID or exact name. You can repeat `--webapp` to select multiple sites. Alternatively, use `--webapps-file` with a plain-text file containing one web-app ID or exact name per line. Blank lines and lines starting with `#` are ignored.
 
 ```bash
+# One web app by ID or exact name
 python3 install_runcloud_plugin.py --webapp 67890
 python3 install_runcloud_plugin.py --webapp "example.com"
-python3 install_runcloud_plugin.py --server 12345 --webapp 67890 --min-wp-version 6.4.2 --dry-run
+
+# Multiple web apps specified directly
+python3 install_runcloud_plugin.py --webapp 67890 --webapp 67891
+
+# Multiple web apps listed in a text file
+python3 install_runcloud_plugin.py --webapps-file webapps.txt
+
+# Combine a file and individual targets, optionally limiting discovery to one server
+python3 install_runcloud_plugin.py --server 12345 --webapps-file webapps.txt --webapp 67890 --min-wp-version 6.4.2 --dry-run
 ```
 
-When using `--server` and `--webapp` together, the web app must belong to the selected server.
+Example `webapps.txt`:
+
+```text
+# RunCloud web-app IDs or exact names, one per line
+67890
+67891
+example.com
+```
+
+The script resolves all requested targets before installing anything. If an entry cannot be found or matches multiple sites, it stops and lists available WordPress web apps; use unique IDs to avoid ambiguity. When `--server` is supplied, targets are resolved only on that server. If no target option is supplied, the script retains its default behavior of processing all WordPress web apps on the selected server(s).
 
 ## Minimum WordPress version
 
