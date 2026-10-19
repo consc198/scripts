@@ -234,6 +234,9 @@ def main():
         except OSError as exc:
             parser.error(f"Could not read web-app list file {args.webapps_file}: {exc}")
 
+    if (args.webapp is not None or args.webapps_file) and not target_names:
+        parser.error("The web-app target options were provided, but no targets were found. Add at least one web-app ID or exact name.")
+
     selected_apps_by_server = {}
     if target_names:
         if discovery_failures:
