@@ -12,7 +12,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 6. Installs and activates the plugin:
 
 ```bash
-wp --skip-plugins plugin install /tmp/conversal-admin-3.0.4.zip --force --activate (after download and SHA-256 verification)
+wp plugin install /tmp/conversal-admin-3.0.4.zip --force --activate --skip-plugins (after download and SHA-256 verification)
 ```
 
 ## Requirements
