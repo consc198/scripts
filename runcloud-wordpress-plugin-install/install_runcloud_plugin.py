@@ -126,7 +126,7 @@ def install_plugin(server, webapp, webapp_user, dry_run, minimum_version=None):
 
     # Download as root, verify the pinned SHA-256, then install as the site's Linux user.
     # The checksum prevents a changed/replaced public ZIP from being installed silently.
-    wp_install = f"cd {shlex.quote(root_path)} && wp --skip-plugins plugin install \"$1\" --force --activate"
+    wp_install = f"cd {shlex.quote(root_path)} && wp plugin install \"$1\" --force --activate --skip-plugins"
     inner = (
         "set -eu; "
         "archive=$(mktemp /tmp/conversal-admin-3.0.4.XXXXXX.zip); "
