@@ -157,6 +157,7 @@ def main():
     parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a plugin ZIP via root SSH.")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
     parser.add_argument("--server", help="RunCloud server ID or exact server name. Omit to process all servers.")
+    parser.add_argument("--webapp", help="Install only to one WordPress web app, by RunCloud web app ID or exact name. Names must match uniquely.")
     parser.add_argument("--min-wp-version", help="Minimum WordPress version required for installation (e.g. 6.4.2). Older sites are skipped.")
     parser.add_argument("--token", help="RunCloud API token (overrides environment variable and token.txt).")
     parser.add_argument("--output", default="runcloud-plugin-install.json")
@@ -202,20 +203,59 @@ def main():
     print(f"Processing {len(servers)} server(s).")
     results = []
     wordpress_count = 0
+    webapps_by_server = {}
+    discovery_failures = []
 
+    # Discover first so a name-based target can be checked for ambiguity before
+    # any site is changed.
     for server in servers:
         server_id = server["id"]
         server_name = server.get("name", f"server-{server_id}")
         print(f"\\n[{server_name}] ({server.get('ipAddress', 'unknown IP')})")
         try:
             webapps = get_all_pages(token, f"/servers/{server_id}/webapps")
+            webapps_by_server[server_id] = webapps
+            wordpress_apps = [app for app in webapps if app.get("type") == "wordpress"]
+            print(f"  Found {len(webapps)} web app(s), {len(wordpress_apps)} WordPress.")
         except Exception as exc:
             print(f"  ERROR listing web apps: {exc}")
-            results.append({"server_id": server_id, "server": server_name, "status": "failed", "message": f"Web-app discovery failed: {exc}"})
-            continue
+            discovery_failures.append({"server_id": server_id, "server": server_name, "status": "failed", "message": f"Web-app discovery failed: {exc}"})
 
-        wordpress_apps = [app for app in webapps if app.get("type") == "wordpress"]
-        print(f"  Found {len(webapps)} web app(s), {len(wordpress_apps)} WordPress.")
+    if args.webapp:
+        candidates = [
+            (server, app)
+            for server in servers
+            for app in webapps_by_server.get(server["id"], [])
+            if app.get("type") == "wordpress"
+            and (str(app.get("id")) == str(args.webapp) or app.get("name") == args.webapp)
+        ]
+        if not candidates:
+            print(f"No WordPress web app matched: {args.webapp}")
+            print("Use a RunCloud web app ID or an exact name. Available WordPress web apps:")
+            for server in servers:
+                for app in webapps_by_server.get(server["id"], []):
+                    if app.get("type") == "wordpress":
+                        print(f"  server {server.get('id')} / web app {app.get('id')} - {app.get('name', 'unnamed')}")
+            sys.exit(1)
+        if len(candidates) > 1:
+            print(f"Web app name/ID '{args.webapp}' matched multiple sites. Re-run using a unique web app ID.")
+            for server, app in candidates:
+                print(f"  server {server.get('id')} / web app {app.get('id')} - {app.get('name', 'unnamed')}")
+            sys.exit(1)
+        selected_server, selected_app = candidates[0]
+        print(f"Selected web app: {selected_app.get('name', selected_app.get('id'))} (ID {selected_app.get('id')}) on {selected_server.get('name', selected_server.get('id'))}")
+        servers = [selected_server]
+        webapps_by_server[selected_server["id"]] = [selected_app]
+
+    results.extend(discovery_failures)
+
+    for server in servers:
+        server_id = server["id"]
+        server_name = server.get("name", f"server-{server_id}")
+        wordpress_apps = [
+            app for app in webapps_by_server.get(server_id, [])
+            if app.get("type") == "wordpress"
+        ]
 
         for app in wordpress_apps:
             wordpress_count += 1
