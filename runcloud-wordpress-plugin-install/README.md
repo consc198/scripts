@@ -87,13 +87,33 @@ python3 install_runcloud_plugin.py --server 12345 --min-wp-version 6.4.2 --dry-r
 
 Version comparison is numeric, so `6.10` is newer than `6.9`. If the script cannot determine a site's WordPress version when a minimum is set, it fails that site safely rather than installing the plugin without checking.
 
+## Remove a plugin from sites
+
+Use `--remove-plugin` to check every selected WordPress web app for a plugin and uninstall it wherever it is found. Provide the plugin slug (for example, `akismet`) or plugin file path (for example, `akismet/akismet.php`). By default, this checks all servers and WordPress web apps; `--server`, `--webapp`, and `--webapps-file` can narrow the targets.
+
+```bash
+# Check all WordPress apps and uninstall the plugin wherever it is installed
+python3 install_runcloud_plugin.py --remove-plugin akismet
+
+# Check one server only
+python3 install_runcloud_plugin.py --server 12345 --remove-plugin akismet
+
+# Check selected web apps only
+python3 install_runcloud_plugin.py --webapps-file webapps.txt --remove-plugin akismet
+
+# Dry run: detect matches and report what would be removed, without uninstalling
+python3 install_runcloud_plugin.py --remove-plugin akismet --dry-run
+```
+
+Removal results are written to `runcloud-plugin-removal.json` by default, or to the path supplied with `--removal-output`. Each checked WordPress app gets a record with the requested plugin, matched plugin file (if found), status (`removed`, `not_found`, `would_remove`, or `failed`), and message. The removal command deactivates the plugin and uninstalls it. Use `--dry-run` first to verify the targets and matches.
+
 ## Dry run
 
 ```bash
 python3 install_runcloud_plugin.py --dry-run
 ```
 
-A dry run does not install the plugin. With a minimum version specified, it reports that the version check would be performed; run without `--dry-run` to actually check versions and install eligible sites.
+A dry run does not install the plugin. With a minimum version specified, it reports that the version check would be performed; run without `--dry-run` to actually check versions and install eligible sites. In `--remove-plugin` mode, a dry run checks installed plugins and records which ones would be removed, without uninstalling them.
 
 ## Reports
 
