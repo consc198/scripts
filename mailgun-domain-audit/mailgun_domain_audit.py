@@ -458,11 +458,19 @@ def main():
         help="show the script version and exit",
     )
     parser.add_argument(
+        "--dns-check",
+        action="store_true",
+        help="run the Mailgun SPF, DKIM, and DMARC audit",
+    )
+    parser.add_argument(
         "--runcloud-check",
         action="store_true",
-        help="compare Mailgun domains with domains configured in RunCloud",
+        help="compare Mailgun domains with domains configured in RunCloud (without DNS audit unless --dns-check is also supplied)",
     )
     args = parser.parse_args()
+    # Preserve the historical default: with no check flags, run the DNS audit.
+    # When --runcloud-check is used alone, skip per-domain DNS/DMARC requests.
+    run_dns_check = args.dns_check or not args.runcloud_check
 
     global API_KEY
     API_KEY = load_api_key()
@@ -484,24 +492,25 @@ def main():
         return 1
 
     results = []
-    for item in domains:
-        try:
-            results.append(audit_domain(item))
-        except Exception as exc:
-            name = item.get("name", "UNKNOWN")
-            print(f"ERROR checking {name}: {exc}", file=sys.stderr)
-            results.append({
-                "domain": name,
-                "mailgun_state": item.get("state", "UNKNOWN"),
-                "spf": "ERROR",
-                "dkim": "ERROR",
-                "tracking": "ERROR",
-                "dmarc": "ERROR",
-                "status": "ERROR",
-                "dmarc_current": "",
-                "dmarc_expected": "",
-                "dmarc_error": str(exc),
-            })
+    if run_dns_check:
+        for item in domains:
+            try:
+                results.append(audit_domain(item))
+            except Exception as exc:
+                name = item.get("name", "UNKNOWN")
+                print(f"ERROR checking {name}: {exc}", file=sys.stderr)
+                results.append({
+                    "domain": name,
+                    "mailgun_state": item.get("state", "UNKNOWN"),
+                    "spf": "ERROR",
+                    "dkim": "ERROR",
+                    "tracking": "ERROR",
+                    "dmarc": "ERROR",
+                    "status": "ERROR",
+                    "dmarc_current": "",
+                    "dmarc_expected": "",
+                    "dmarc_error": str(exc),
+                })
 
     if args.runcloud_check:
         runcloud_token = load_runcloud_api_key()
@@ -518,22 +527,23 @@ def main():
         )
         write_runcloud_report(missing, report_path)
 
-    fields = [
-        "domain", "mailgun_state", "spf", "dkim", "tracking", "dmarc",
-        "status", "dmarc_current", "dmarc_expected", "dmarc_error",
-    ]
-    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(results)
+    if run_dns_check:
+        fields = [
+            "domain", "mailgun_state", "spf", "dkim", "tracking", "dmarc",
+            "status", "dmarc_current", "dmarc_expected", "dmarc_error",
+        ]
+        with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(results)
 
-    print("\nDOMAIN\tSPF\tDKIM\tDMARC\tSTATUS")
-    for row in results:
-        print(
-            f"{row['domain']}\t{row['spf']}\t{row['dkim']}\t"
-            f"{row['dmarc']}\t{row['status']}"
-        )
-    print(f"\nCSV written to: {OUTPUT_FILE}")
+        print("\nDOMAIN\tSPF\tDKIM\tDMARC\tSTATUS")
+        for row in results:
+            print(
+                f"{row['domain']}\t{row['spf']}\t{row['dkim']}\t"
+                f"{row['dmarc']}\t{row['status']}"
+            )
+        print(f"\nCSV written to: {OUTPUT_FILE}")
     return 0
 
 
