@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.8] - 2026-10-20
+
+### Fixed
+- Strip the `mgn.` Mailgun sending prefix during RunCloud comparison, as already done for `mg.`.
+
 ## [0.3.7] - 2026-10-20
 
 ### Changed
