@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.5] - 2026-10-20
+
+### Changed
+- Send the documented `Content-Type: application/json` header with RunCloud API requests.
+- Include a truncated RunCloud error response body in HTTP errors to improve troubleshooting.
+
 ## [0.3.4] - 2026-10-20
 
 ### Fixed
