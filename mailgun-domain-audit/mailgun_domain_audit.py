@@ -314,12 +314,13 @@ def report_mailgun_domains_missing_from_runcloud(mailgun_domains, runcloud_domai
         matched = bool(root_domain and root_domain in runcloud_domains)
 
         # Dedicated Conversal Mailgun domains identify a customer by their first
-        # label; RunCloud may store that site's full domain (e.g. delta-temp.com).
+        # label; RunCloud may store that site's full domain with any TLD.
         normalized_mailgun = str(mailgun_domain).strip().lower().rstrip(".")
         is_conversal_domain = any(normalized_mailgun.endswith(suffix) for suffix in conversal_suffixes)
         if root_domain and not matched and is_conversal_domain:
             matched = any(
-                runcloud_domain.split(".", 1)[0] == root_domain
+                runcloud_domain == root_domain
+                or runcloud_domain.startswith(root_domain + ".")
                 for runcloud_domain in runcloud_domains
             )
 
