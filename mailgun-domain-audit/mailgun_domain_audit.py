@@ -259,11 +259,18 @@ def runcloud_get(path, token, params=None, retries=3):
     raise RuntimeError(f"RunCloud request failed: {url}")
 
 
-def runcloud_list_all(path, token):
-    """Read all pages from a RunCloud list endpoint."""
+def progress_status(message):
+    """Update one terminal status line while RunCloud data is being collected."""
+    print(f"RunCloud check: {message}", end="\\r", file=sys.stderr, flush=True)
+
+
+def runcloud_list_all(path, token, progress_label=None):
+    """Read all pages from a RunCloud list endpoint, reporting pagination progress."""
     items = []
     page = 1
     while True:
+        if progress_label:
+            progress_status(f"{progress_label} (page {page})")
         payload = runcloud_get(path, token, params={"page": page})
         page_items = payload.get("data", [])
         if not isinstance(page_items, list):
@@ -285,22 +292,41 @@ def runcloud_list_all(path, token):
 def get_runcloud_domains(token):
     """Collect configured domain names from every RunCloud server and web application."""
     found = set()
-    servers = runcloud_list_all("/servers", token)
+    progress_status("fetching server list...")
+    servers = runcloud_list_all("/servers", token, "fetching server list")
     print(f"Retrieved {len(servers)} RunCloud server(s).", file=sys.stderr)
-    for server in servers:
+
+    total_apps = 0
+    processed_apps = 0
+    for server_index, server in enumerate(servers, start=1):
         server_id = server.get("id")
         if server_id is None:
             continue
-        apps = runcloud_list_all(f"/servers/{server_id}/webapps", token)
-        for app in apps:
+        progress_status(f"server {server_index}/{len(servers)}: fetching web apps...")
+        apps = runcloud_list_all(
+            f"/servers/{server_id}/webapps",
+            token,
+            f"server {server_index}/{len(servers)} web apps",
+        )
+        total_apps += len(apps)
+        # App counts are discovered per server, so show the current server's count
+        # while keeping the user informed about the phase and current work.
+        for app_index, app in enumerate(apps, start=1):
             app_id = app.get("id")
             if app_id is None:
                 continue
+            processed_apps += 1
             path = f"/servers/{server_id}/webapps/{app_id}/domains"
-            for item in runcloud_list_all(path, token):
+            label = (
+                f"server {server_index}/{len(servers)}, app {app_index}/{len(apps)} "
+                f"(processed {processed_apps} apps): fetching domains"
+            )
+            for item in runcloud_list_all(path, token, label):
                 name = item.get("name")
                 if name:
                     found.add(normalize_runcloud_domain(name))
+    print(" " * 120, end="\\r", file=sys.stderr, flush=True)
+    print(f"RunCloud check: collected {len(found)} unique domain(s).", file=sys.stderr)
     return found
 
 
