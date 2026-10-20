@@ -208,7 +208,7 @@ def main():
     parser.add_argument("--webapp", action="append", help="Target a WordPress web app by RunCloud web app ID or exact name. May be repeated; names must match uniquely.")
     parser.add_argument("--webapps-file", help="Text file containing target web app IDs or exact names, one per line. Blank lines and lines starting with # are ignored.")
     parser.add_argument("--min-wp-version", help="Minimum WordPress version required for installation (e.g. 6.4.2). Older sites are skipped.")
-    parser.add_argument("--remove-plugin", metavar="PLUGIN", help="Find and uninstall this plugin from selected WordPress apps (plugin slug or plugin file path). Writes a separate JSON report.")
+    parser.add_argument("--remove-plugin", action="append", metavar="PLUGIN", help="Find and uninstall this plugin from selected WordPress apps (plugin slug or plugin file path). Repeat to remove multiple plugins; writes a separate JSON report.")
     parser.add_argument("--removal-output", default="runcloud-plugin-removal.json", help="JSON report path for --remove-plugin mode.")
     parser.add_argument("--token", help="RunCloud API token (overrides environment variable and token.txt).")
     parser.add_argument("--output", default="runcloud-plugin-install.json")
@@ -358,40 +358,87 @@ def main():
         for app in wordpress_apps:
             wordpress_count += 1
             webapp_user = None
-            installed_version = None
-            matched_plugin = None
             try:
                 webapp_user = get_webapp_ssh_user(token, server_id, app)
-                if args.remove_plugin:
-                    status, message, matched_plugin = remove_plugin(
-                        server, app, webapp_user, args.remove_plugin, args.dry_run
-                    )
-                else:
+            except Exception as exc:
+                requested_plugins = args.remove_plugin if args.remove_plugin else [None]
+                for plugin_requested in requested_plugins:
+                    results.append({
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "server_id": server_id,
+                        "server": server_name,
+                        "server_ip": server.get("ipAddress"),
+                        "webapp_id": app.get("id"),
+                        "webapp": app.get("name"),
+                        "server_user_id": app.get("server_user_id"),
+                        "ssh_user": SSH_USER,
+                        "run_as_user": None,
+                        "rootPath": app.get("rootPath"),
+                        "plugin_requested": plugin_requested,
+                        "plugin_matched": None,
+                        "wordpress_version": None,
+                        "minimum_wordpress_version": args.min_wp_version,
+                        "status": "failed",
+                        "message": str(exc),
+                    })
+                print(f"  FAILED: {exc}", file=sys.stderr)
+                continue
+
+            if args.remove_plugin:
+                for plugin_requested in args.remove_plugin:
+                    matched_plugin = None
+                    try:
+                        status, message, matched_plugin = remove_plugin(
+                            server, app, webapp_user, plugin_requested, args.dry_run
+                        )
+                    except Exception as exc:
+                        status, message = "failed", str(exc)
+                        print(f"  FAILED removing {plugin_requested}: {message}", file=sys.stderr)
+                    results.append({
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "server_id": server_id,
+                        "server": server_name,
+                        "server_ip": server.get("ipAddress"),
+                        "webapp_id": app.get("id"),
+                        "webapp": app.get("name"),
+                        "server_user_id": app.get("server_user_id"),
+                        "ssh_user": SSH_USER,
+                        "run_as_user": webapp_user,
+                        "rootPath": app.get("rootPath"),
+                        "plugin_requested": plugin_requested,
+                        "plugin_matched": matched_plugin,
+                        "wordpress_version": None,
+                        "minimum_wordpress_version": None,
+                        "status": status,
+                        "message": message,
+                    })
+            else:
+                installed_version = None
+                try:
                     status, message, installed_version = install_plugin(
                         server, app, webapp_user, args.dry_run, args.min_wp_version
                     )
-            except Exception as exc:
-                status, message = "failed", str(exc)
-                print(f"  FAILED: {message}", file=sys.stderr)
-
-            results.append({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "server_id": server_id,
-                "server": server_name,
-                "server_ip": server.get("ipAddress"),
-                "webapp_id": app.get("id"),
-                "webapp": app.get("name"),
-                "server_user_id": app.get("server_user_id"),
-                "ssh_user": SSH_USER,
-                "run_as_user": webapp_user,
-                "rootPath": app.get("rootPath"),
-                "plugin_requested": args.remove_plugin,
-                "plugin_matched": matched_plugin,
-                "wordpress_version": installed_version,
-                "minimum_wordpress_version": args.min_wp_version,
-                "status": status,
-                "message": message,
-            })
+                except Exception as exc:
+                    status, message = "failed", str(exc)
+                    print(f"  FAILED: {message}", file=sys.stderr)
+                results.append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "server_id": server_id,
+                    "server": server_name,
+                    "server_ip": server.get("ipAddress"),
+                    "webapp_id": app.get("id"),
+                    "webapp": app.get("name"),
+                    "server_user_id": app.get("server_user_id"),
+                    "ssh_user": SSH_USER,
+                    "run_as_user": webapp_user,
+                    "rootPath": app.get("rootPath"),
+                    "plugin_requested": None,
+                    "plugin_matched": None,
+                    "wordpress_version": installed_version,
+                    "minimum_wordpress_version": args.min_wp_version,
+                    "status": status,
+                    "message": message,
+                })
 
     report_path = args.removal_output if args.remove_plugin else args.output
     Path(report_path).write_text(json.dumps(results, indent=2), encoding="utf-8")
@@ -404,7 +451,7 @@ def main():
         would_remove = sum(r.get("status") == "would_remove" for r in results)
         print("RUNCloud WORDPRESS PLUGIN REMOVAL REPORT")
         print("=" * 72)
-        print(f"Plugin requested:         {args.remove_plugin}")
+        print(f"Plugins requested:        {\", \".join(args.remove_plugin)}")
         print(f"Servers processed:        {len(servers)}")
         print(f"WordPress sites checked:  {wordpress_count}")
         print(f"Removed:                  {removed}")
