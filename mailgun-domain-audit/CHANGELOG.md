@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.16] - 2026-10-20
+
+### Added
+- Include Mailgun's month-to-date `accepted_outgoing_count` per missing domain in the RunCloud comparison CSV, with the UTC reporting period and any metrics API error.
+
 ## [0.3.15] - 2026-10-20
 
 ### Fixed
