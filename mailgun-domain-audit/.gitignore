@@ -1,0 +1,5 @@
+# Local secrets
+apikey.txt
+
+# Generated audit reports
+mailgun_domain_audit.csv
