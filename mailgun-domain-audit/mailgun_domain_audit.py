@@ -19,6 +19,7 @@ import csv
 import os
 import sys
 import time
+import subprocess
 from urllib.parse import quote
 
 import requests
@@ -181,46 +182,78 @@ def normalize_runcloud_domain(domain):
 
 
 def runcloud_get(path, token, params=None, retries=3):
-    """GET a RunCloud API endpoint with retry handling for transient errors."""
+    """GET RunCloud through curl to match the working CLI request path.
+
+    The server's Cloudflare layer was challenging Python requests while allowing
+    curl. The token is passed through curl's stdin config, not its command line.
+    """
     url = f"{RUNCLOUD_BASE_URL}{path}"
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
-    }
+    if params:
+        from urllib.parse import urlencode
+        url = f"{url}?{urlencode(params)}"
+
+    def curl_quote(value):
+        return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "") + '"'
+
+    config = "\n".join([
+        "silent",
+        "show-error",
+        f"url = {curl_quote(url)}",
+        f"header = {curl_quote('Accept: application/json')}",
+        f"header = {curl_quote('Content-Type: application/json')}",
+        f"header = {curl_quote(f'Authorization: Bearer {token}')}",
+        'write-out = "HTTPSTATUS:%{http_code}"',
+        "",
+    ])
+
     for attempt in range(retries):
         try:
-            response = requests.get(url, headers=headers, params=params, timeout=30)
-            if response.status_code == 429 or response.status_code >= 500:
-                if attempt < retries - 1:
-                    retry_after = response.headers.get("Retry-After")
-                    try:
-                        delay = max(1, int(retry_after)) if retry_after else 2 ** (attempt + 1)
-                    except ValueError:
-                        delay = 2 ** (attempt + 1)
-                    print(
-                        f"RunCloud temporary HTTP {response.status_code}; retrying in {delay}s...",
-                        file=sys.stderr,
-                    )
-                    time.sleep(delay)
-                    continue
-            try:
-                response.raise_for_status()
-            except requests.HTTPError as exc:
-                # Include the API's response body to make 4xx diagnostics actionable.
-                body = response.text.strip()
-                if body:
-                    raise requests.HTTPError(
-                        f"{exc}; response body: {body[:1000]}",
-                        response=response,
-                    ) from exc
-                raise
-            return response.json()
-        except requests.RequestException:
+            response = subprocess.run(
+                ["curl", "--config", "-"],
+                input=config,
+                text=True,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
             if attempt < retries - 1:
                 time.sleep(2 ** attempt)
                 continue
-            raise
+            raise RuntimeError(f"Unable to run curl for RunCloud request: {exc}") from exc
+
+        if response.returncode != 0:
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            detail = response.stderr.strip() or f"curl exit code {response.returncode}"
+            raise RuntimeError(f"RunCloud curl request failed: {detail}")
+
+        body, marker, status_text = response.stdout.rpartition("HTTPSTATUS:")
+        if not marker or not status_text.strip().isdigit():
+            raise RuntimeError("Could not read HTTP status from RunCloud curl response.")
+        status_code = int(status_text.strip())
+
+        if status_code == 429 or status_code >= 500:
+            if attempt < retries - 1:
+                delay = 2 ** (attempt + 1)
+                print(
+                    f"RunCloud temporary HTTP {status_code}; retrying in {delay}s...",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+                continue
+
+        if status_code < 200 or status_code >= 300:
+            detail = body.strip()[:1000]
+            suffix = f"; response body: {detail}" if detail else ""
+            raise RuntimeError(f"RunCloud HTTP {status_code} for {url}{suffix}")
+
+        try:
+            return requests.models.complexjson.loads(body)
+        except ValueError as exc:
+            raise RuntimeError(f"RunCloud returned invalid JSON for {url}: {exc}") from exc
+
     raise RuntimeError(f"RunCloud request failed: {url}")
 
 
