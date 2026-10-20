@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.1.0`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.1.1`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -11,7 +11,7 @@ The tool inventories domains in a Mailgun account and writes a CSV report with a
 - Checks DMARC using the Mailgun DMARC records endpoint.
 - Exports results to CSV.
 - Uses the **EU API by default**; the API base can be overridden through an environment variable.
-- Keeps credentials out of source code.
+- Reads the API key from a local `apikey.txt` file by default, with an optional environment-variable override.
 
 ## Requirements
 
@@ -24,13 +24,15 @@ Install:
 python3 -m pip install requests
 ```
 
-## Configuration
+## Configure
 
-Set your Mailgun API key in your shell:
+Create a file named `apikey.txt` in this directory, next to `mailgun_domain_audit.py`. Put your Mailgun API key on a single line:
 
-```bash
-export MAILGUN_API_KEY='your-mailgun-api-key'
+```text
+key-your-mailgun-api-key
 ```
+
+The script reads and trims the file contents. Alternatively, set `MAILGUN_API_KEY` in the environment; when set, the environment variable takes precedence over the file.
 
 The default API base is `https://api.eu.mailgun.net`. For a US-region account, override it:
 
@@ -44,7 +46,7 @@ Optional output path:
 export MAILGUN_AUDIT_CSV='mailgun_domain_audit.csv'
 ```
 
-Never commit your API key or other secrets.
+**Security:** `apikey.txt` contains a secret. Keep it local, do not commit it, and restrict its filesystem permissions where supported (for example, `chmod 600 apikey.txt` on macOS/Linux). The repository includes a `.gitignore` rule for this filename.
 
 ## Run
 
@@ -81,6 +83,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 ## Project files
 
 - `mailgun_domain_audit.py` — audit script.
+- `apikey.txt` — local secret file; do not commit.
 - `README.md` — setup, usage, and limitations.
 - `CHANGELOG.md` — notable changes by version.
 - `VERSION` — current project version.
