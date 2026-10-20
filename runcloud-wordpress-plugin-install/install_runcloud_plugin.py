@@ -90,6 +90,54 @@ def run_as_webapp_user(host, webapp_user, root_path, wp_args):
     return result.stdout.strip()
 
 
+def remove_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
+    """Remove a plugin if it is installed, returning a reportable status."""
+    host = server.get("ipAddress")
+    root_path = webapp.get("rootPath")
+    if not host:
+        return "failed", "No server IP address", None
+    if not root_path:
+        return "failed", "No web-app rootPath", None
+
+    server_name = server.get("name", f"server-{server['id']}")
+    webapp_name = webapp.get("name", f"webapp-{webapp['id']}")
+    try:
+        output = run_as_webapp_user(
+            host, webapp_user, root_path,
+            "plugin list --field=name --skip-plugins --skip-themes",
+        )
+    except Exception as exc:
+        return "failed", f"Could not list installed plugins: {exc}", None
+
+    installed_plugins = [line.strip() for line in output.splitlines() if line.strip()]
+    matched_plugin = next(
+        (
+            name for name in installed_plugins
+            if name == plugin_slug
+            or ("/" not in plugin_slug and name.split("/", 1)[0] == plugin_slug)
+        ),
+        None,
+    )
+    if not matched_plugin:
+        print(f"[NOT FOUND] {server_name} / {webapp_name}: {plugin_slug}")
+        return "not_found", "Plugin is not installed", None
+
+    if dry_run:
+        print(f"[DRY-RUN] Would uninstall {matched_plugin} from {server_name} / {webapp_name}")
+        return "would_remove", "Plugin is installed; dry-run did not remove it", matched_plugin
+
+    try:
+        run_as_webapp_user(
+            host, webapp_user, root_path,
+            f"plugin uninstall {shlex.quote(matched_plugin)} --deactivate --skip-plugins --skip-themes",
+        )
+    except Exception as exc:
+        return "failed", f"Plugin was found ({matched_plugin}) but uninstall failed: {exc}", matched_plugin
+
+    print(f"[REMOVED] {server_name} / {webapp_name}: {matched_plugin}")
+    return "removed", "Plugin uninstalled and deactivated", matched_plugin
+
+
 def version_tuple(version):
     """Compare numeric WordPress versions without requiring another dependency."""
     match = re.match(r"^\s*(\d+(?:\.\d+)*)(?:[-+].*)?\s*$", version)
@@ -160,10 +208,14 @@ def main():
     parser.add_argument("--webapp", action="append", help="Target a WordPress web app by RunCloud web app ID or exact name. May be repeated; names must match uniquely.")
     parser.add_argument("--webapps-file", help="Text file containing target web app IDs or exact names, one per line. Blank lines and lines starting with # are ignored.")
     parser.add_argument("--min-wp-version", help="Minimum WordPress version required for installation (e.g. 6.4.2). Older sites are skipped.")
+    parser.add_argument("--remove-plugin", metavar="PLUGIN", help="Find and uninstall this plugin from selected WordPress apps (plugin slug or plugin file path). Writes a separate JSON report.")
+    parser.add_argument("--removal-output", default="runcloud-plugin-removal.json", help="JSON report path for --remove-plugin mode.")
     parser.add_argument("--token", help="RunCloud API token (overrides environment variable and token.txt).")
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
 
+    if args.remove_plugin and args.min_wp_version:
+        parser.error("--min-wp-version applies to installation mode and cannot be combined with --remove-plugin.")
     if args.min_wp_version:
         try:
             version_tuple(args.min_wp_version)
@@ -307,11 +359,17 @@ def main():
             wordpress_count += 1
             webapp_user = None
             installed_version = None
+            matched_plugin = None
             try:
                 webapp_user = get_webapp_ssh_user(token, server_id, app)
-                status, message, installed_version = install_plugin(
-                    server, app, webapp_user, args.dry_run, args.min_wp_version
-                )
+                if args.remove_plugin:
+                    status, message, matched_plugin = remove_plugin(
+                        server, app, webapp_user, args.remove_plugin, args.dry_run
+                    )
+                else:
+                    status, message, installed_version = install_plugin(
+                        server, app, webapp_user, args.dry_run, args.min_wp_version
+                    )
             except Exception as exc:
                 status, message = "failed", str(exc)
                 print(f"  FAILED: {message}", file=sys.stderr)
@@ -327,44 +385,56 @@ def main():
                 "ssh_user": SSH_USER,
                 "run_as_user": webapp_user,
                 "rootPath": app.get("rootPath"),
+                "plugin_requested": args.remove_plugin,
+                "plugin_matched": matched_plugin,
                 "wordpress_version": installed_version,
                 "minimum_wordpress_version": args.min_wp_version,
                 "status": status,
                 "message": message,
             })
 
-    Path(args.output).write_text(json.dumps(results, indent=2), encoding="utf-8")
-    successes = sum(r.get("status") == "success" for r in results)
-    skipped = [r for r in results if r.get("status") == "skipped"]
+    report_path = args.removal_output if args.remove_plugin else args.output
+    Path(report_path).write_text(json.dumps(results, indent=2), encoding="utf-8")
     failures = [r for r in results if r.get("status") == "failed"]
 
-    print("\\n" + "=" * 72)
-    print("RUNCloud WORDPRESS PLUGIN INSTALLATION REPORT")
-    print("=" * 72)
-    print(f"Servers processed:        {len(servers)}")
-    print(f"WordPress sites found:    {wordpress_count}")
-    print(f"Successful:               {successes}")
-    print(f"Skipped (version):        {len(skipped)}")
+    print("\n" + "=" * 72)
+    if args.remove_plugin:
+        removed = sum(r.get("status") == "removed" for r in results)
+        not_found = sum(r.get("status") == "not_found" for r in results)
+        would_remove = sum(r.get("status") == "would_remove" for r in results)
+        print("RUNCloud WORDPRESS PLUGIN REMOVAL REPORT")
+        print("=" * 72)
+        print(f"Plugin requested:         {args.remove_plugin}")
+        print(f"Servers processed:        {len(servers)}")
+        print(f"WordPress sites checked:  {wordpress_count}")
+        print(f"Removed:                  {removed}")
+        print(f"Not installed:            {not_found}")
+        print(f"Would remove (dry-run):   {would_remove}")
+    else:
+        successes = sum(r.get("status") == "success" for r in results)
+        skipped = [r for r in results if r.get("status") == "skipped"]
+        print("RUNCloud WORDPRESS PLUGIN INSTALLATION REPORT")
+        print("=" * 72)
+        print(f"Servers processed:        {len(servers)}")
+        print(f"WordPress sites found:    {wordpress_count}")
+        print(f"Successful:               {successes}")
+        print(f"Skipped (version):        {len(skipped)}")
+        print(f"Minimum WP version:       {args.min_wp_version or 'not set'}")
     print(f"Failed:                   {len(failures)}")
-    print(f"Minimum WP version:       {args.min_wp_version or 'not set'}")
-    print(f"Results file:             {args.output}")
+    print(f"Results file:             {report_path}")
 
-    for heading, entries in (("SKIPPED SITES", skipped), ("FAILURES", failures)):
-        if entries:
-            print(f"\\n{heading}")
-            print("-" * 72)
-            for index, entry in enumerate(entries, 1):
-                print(f"{index}. {entry.get('server', 'unknown server')} / {entry.get('webapp', 'unknown site')}")
-                print(f"   Reason: {entry.get('message', 'Unknown')}")
-                if entry.get("wordpress_version"):
-                    print(f"   WordPress: {entry['wordpress_version']}")
-                if entry.get("rootPath"):
-                    print(f"   Path: {entry['rootPath']}")
-                if entry.get("server_ip"):
-                    print(f"   SSH: {SSH_USER}@{entry['server_ip']}:{SSH_PORT}")
-
-    if not failures:
-        print("\\nNo failures.")
+    if failures:
+        print("\nFAILURES")
+        print("-" * 72)
+        for index, entry in enumerate(failures, 1):
+            print(f"{index}. {entry.get('server', 'unknown server')} / {entry.get('webapp', 'unknown site')}")
+            print(f"   Reason: {entry.get('message', 'Unknown')}")
+            if entry.get("rootPath"):
+                print(f"   Path: {entry['rootPath']}")
+            if entry.get("server_ip"):
+                print(f"   SSH: {SSH_USER}@{entry['server_ip']}:{SSH_PORT}")
+    else:
+        print("\nNo failures.")
     print("=" * 72)
     if failures:
         sys.exit(2)
