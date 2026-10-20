@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.0`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.1`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -49,7 +49,7 @@ export MAILGUN_AUDIT_CSV='mailgun_domain_audit.csv'
 
 ### Optional RunCloud comparison
 
-To enable the comparison, create `runcloud_apikey.txt` beside the script and put your RunCloud API token on one line. RunCloud API access must be enabled for your account. You can instead set `RUNCLOUD_API_KEY`; that environment variable takes precedence over the file.
+To enable the comparison, create `runcloud_apikey.txt` beside the script and put your RunCloud API token on one line. RunCloud API access must be enabled for your account. The script always reads the token from `runcloud_apikey.txt`; `RUNCLOUD_API_KEY` is not used.
 
 Run the audit and compare Mailgun domains against RunCloud:
 
