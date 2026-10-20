@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 token.txt
 webapps.txt
+runcloud-plugin-removal.json
