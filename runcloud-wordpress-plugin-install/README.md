@@ -89,7 +89,7 @@ Version comparison is numeric, so `6.10` is newer than `6.9`. If the script cann
 
 ## Remove a plugin from sites
 
-Use `--remove-plugin` to check every selected WordPress web app for a plugin and uninstall it wherever it is found. Provide the plugin slug (for example, `akismet`) or plugin file path (for example, `akismet/akismet.php`). By default, this checks all servers and WordPress web apps; `--server`, `--webapp`, and `--webapps-file` can narrow the targets.
+Use `--remove-plugin` to check every selected WordPress web app for a plugin and uninstall it wherever it is found. Provide the plugin slug (for example, `akismet`) or plugin file path (for example, `akismet/akismet.php`). Repeat `--remove-plugin` to remove multiple plugins in one run. By default, this checks all servers and WordPress web apps; `--server`, `--webapp`, and `--webapps-file` can narrow the targets.
 
 ```bash
 # Check all WordPress apps and uninstall the plugin wherever it is installed
@@ -101,11 +101,14 @@ python3 install_runcloud_plugin.py --server 12345 --remove-plugin akismet
 # Check selected web apps only
 python3 install_runcloud_plugin.py --webapps-file webapps.txt --remove-plugin akismet
 
-# Dry run: detect matches and report what would be removed, without uninstalling
-python3 install_runcloud_plugin.py --remove-plugin akismet --dry-run
+# Remove multiple plugins in the same run
+python3 install_runcloud_plugin.py --remove-plugin akismet --remove-plugin hello-dolly --remove-plugin wordfence
+
+# Dry run: detect matches for each plugin and report what would be removed
+python3 install_runcloud_plugin.py --remove-plugin akismet --remove-plugin hello-dolly --dry-run
 ```
 
-Removal results are written to `runcloud-plugin-removal.json` by default, or to the path supplied with `--removal-output`. Each checked WordPress app gets a record with the requested plugin, matched plugin file (if found), status (`removed`, `not_found`, `would_remove`, or `failed`), and message. The removal command deactivates the plugin and uninstalls it. Use `--dry-run` first to verify the targets and matches.
+Removal results are written to `runcloud-plugin-removal.json` by default, or to the path supplied with `--removal-output`. The JSON report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`removed`, `not_found`, `would_remove`, or `failed`), and message. The removal command deactivates the plugin and uninstalls it. Use `--dry-run` first to verify the targets and matches.
 
 ## Dry run
 
