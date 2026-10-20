@@ -451,7 +451,7 @@ def main():
         would_remove = sum(r.get("status") == "would_remove" for r in results)
         print("RUNCloud WORDPRESS PLUGIN REMOVAL REPORT")
         print("=" * 72)
-        print(f"Plugins requested:        {\", \".join(args.remove_plugin)}")
+        print("Plugins requested:        " + ", ".join(args.remove_plugin))
         print(f"Servers processed:        {len(servers)}")
         print(f"WordPress sites checked:  {wordpress_count}")
         print(f"Removed:                  {removed}")
