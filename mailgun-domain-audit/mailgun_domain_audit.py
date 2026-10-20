@@ -4,8 +4,9 @@
 Requires:
     python -m pip install requests
 
-Environment:
-    MAILGUN_API_KEY   Required Mailgun API key.
+Configuration:
+    apikey.txt        Required by default; contains the Mailgun API key on one line.
+    MAILGUN_API_KEY   Optional environment-variable override.
     MAILGUN_API_BASE  Optional API base URL. Defaults to the EU endpoint.
 
 This script reports Mailgun DNS verification and DMARC API results separately.
@@ -21,7 +22,33 @@ from urllib.parse import quote
 
 import requests
 
-API_KEY = os.environ.get("MAILGUN_API_KEY")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+API_KEY_FILE = os.path.join(SCRIPT_DIR, "apikey.txt")
+
+
+def load_api_key():
+    """Prefer MAILGUN_API_KEY when set; otherwise read apikey.txt beside this script."""
+    env_key = os.environ.get("MAILGUN_API_KEY", "").strip()
+    if env_key:
+        return env_key
+
+    try:
+        with open(API_KEY_FILE, "r", encoding="utf-8") as handle:
+            key = handle.read().strip()
+    except FileNotFoundError:
+        print(
+            f"ERROR: API key not found. Create {API_KEY_FILE} with your Mailgun API key.",
+            file=sys.stderr,
+        )
+        return None
+
+    if not key:
+        print(f"ERROR: {API_KEY_FILE} is empty.", file=sys.stderr)
+        return None
+    return key
+
+
+API_KEY = load_api_key()
 BASE_URL = os.environ.get(
     "MAILGUN_API_BASE",
     "https://api.eu.mailgun.net",
@@ -200,7 +227,10 @@ def audit_domain(domain_obj):
 
 def main():
     if not API_KEY:
-        print("ERROR: set MAILGUN_API_KEY in your environment.", file=sys.stderr)
+        print(
+            "ERROR: add your Mailgun API key to apikey.txt or set MAILGUN_API_KEY.",
+            file=sys.stderr,
+        )
         return 1
 
     print(f"Mailgun API base: {BASE_URL}", file=sys.stderr)
