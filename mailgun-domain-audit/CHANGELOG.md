@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.14] - 2026-10-20
+
+### Fixed
+- Normalize a leading `www.` on Mailgun domains as well as RunCloud domains, so `www.solicom-verisafe.com` matches `solicom-verisafe.com`.
+
 ## [0.3.13] - 2026-10-20
 
 ### Fixed
