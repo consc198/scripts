@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.1`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.2`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -81,14 +81,14 @@ The script writes `mailgun_domain_audit.csv` and prints a summary to the termina
 
 ## Interpreting results
 
-- **PASS** — the API response explicitly indicates success.
-- **FAIL** — the API response explicitly indicates failure or reports DMARC as unconfigured.
-- **UNKNOWN** — the response did not contain a status this initial classifier can confidently interpret.
+- **PASS** — the API response explicitly indicates success, including Mailgun DNS record values such as `valid: "valid"`.
+- **FAIL** — the API response explicitly indicates failure (including `valid: "invalid"`) or reports DMARC as unconfigured.
+- **UNKNOWN** — the response did not contain a status this classifier can confidently interpret.
 - **REVIEW** — at least one key check is unknown.
 - **ACTION_REQUIRED** — at least one key check failed or the Mailgun domain is not active.
 - **ERROR** — a request failed for that domain.
 
-**Important:** this is an initial version. Validate results against your account's actual Mailgun API responses before using the report as the sole basis for remediation. In particular, SPF/DKIM record shapes and verification fields may vary by domain configuration. A `PASS` from this script reflects its interpretation of returned API data, not an independent DNS standards audit.
+**Important:** validate results against your account's actual Mailgun API responses before using the report as the sole basis for remediation. A `PASS` from this script reflects its interpretation of returned API data, not an independent DNS standards audit.
 
 ## Versioning and changelog
 
