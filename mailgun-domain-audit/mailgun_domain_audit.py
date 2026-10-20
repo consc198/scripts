@@ -168,9 +168,10 @@ def normalize_mailgun_domain(domain):
     for suffix in (".conversalmail.be", ".conversalhosting.be"):
         if domain.endswith(suffix):
             return domain[:-len(suffix)].split(".", 1)[0]
-    # Standard Mailgun sending subdomains map to their root domain.
-    if domain.startswith("mg."):
-        return domain[3:]
+    # Standard Mailgun sending prefixes map to their root domain.
+    for prefix in ("mgn.", "mg."):
+        if domain.startswith(prefix):
+            return domain[len(prefix):]
     return domain
 
 
