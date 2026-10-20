@@ -133,10 +133,7 @@ def get_dmarc(domain):
 
 
 def load_runcloud_api_key():
-    """Prefer RUNCLOUD_API_KEY; otherwise read runcloud_apikey.txt beside this script."""
-    env_key = os.environ.get("RUNCLOUD_API_KEY", "").strip()
-    if env_key:
-        return env_key
+    """Always read the RunCloud API token from runcloud_apikey.txt beside this script."""
     try:
         with open(RUNCLOUD_API_KEY_FILE, "r", encoding="utf-8") as handle:
             key = handle.read().strip()
