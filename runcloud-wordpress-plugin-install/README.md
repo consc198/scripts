@@ -88,6 +88,26 @@ python3 install_runcloud_plugin.py --server 12345 --min-wp-version 6.4.2 --dry-r
 
 Version comparison is numeric, so `6.10` is newer than `6.9`. If the script cannot determine a site's WordPress version when a minimum is set, it fails that site safely rather than installing the plugin without checking.
 
+## Update a plugin to its latest version
+
+Use `--update-plugin` to update an installed plugin to the latest version available through WordPress.org (or the plugin's configured update source) on every selected WordPress web app. Provide the plugin slug (for example, `akismet`) or plugin file path (for example, `akismet/akismet.php`). Repeat `--update-plugin` to update multiple plugins in one run. By default, this checks all servers and WordPress web apps; `--server`, `--webapp`, and `--webapps-file` can narrow the targets.
+
+```bash
+# Update one plugin on all WordPress apps
+python3 install_runcloud_plugin.py --update-plugin akismet
+
+# Update multiple plugins on all apps
+python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordfence
+
+# Limit to one server
+python3 install_runcloud_plugin.py --server 12345 --update-plugin akismet
+
+# Dry run: find plugin matches without updating
+python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordfence --dry-run
+```
+
+Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `not_found`, `would_update`, or `failed`), and message. WP-CLI performs the update and reports if the plugin was already current. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
+
 ## Remove a plugin from sites
 
 Use `--remove-plugin` to check every selected WordPress web app for a plugin and uninstall it wherever it is found. Provide the plugin slug (for example, `akismet`) or plugin file path (for example, `akismet/akismet.php`). Repeat `--remove-plugin` to remove multiple plugins in one run. By default, this checks all servers and WordPress web apps; `--server`, `--webapp`, and `--webapps-file` can narrow the targets.
@@ -117,7 +137,7 @@ Removal results are written to `runcloud-plugin-removal.json` by default, or to 
 python3 install_runcloud_plugin.py --dry-run
 ```
 
-A dry run does not install the plugin. With a minimum version specified, it reports that the version check would be performed; run without `--dry-run` to actually check versions and install eligible sites. In `--remove-plugin` mode, a dry run checks installed plugins and records which ones would be removed, without uninstalling them.
+A dry run does not install the plugin. With a minimum version specified, it reports that the version check would be performed; run without `--dry-run` to actually check versions and install eligible sites. In `--remove-plugin` mode, a dry run checks installed plugins and records which ones would be removed, without uninstalling them. In `--update-plugin` mode, a dry run checks installed plugins and records which ones would be updated, without changing them.
 
 ## Reports
 
