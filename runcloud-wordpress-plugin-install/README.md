@@ -1,5 +1,15 @@
 # RunCloud WordPress Plugin Installer
 
+**Current script version:** `1.1.0` (Semantic Versioning).
+
+Check the installed script version without contacting RunCloud or requiring an API token:
+
+```bash
+python3 install_runcloud_plugin.py --version
+```
+
+Release notes and versioning policy are maintained in [`CHANGELOG.md`](CHANGELOG.md). Releases use Git tags in the form `vMAJOR.MINOR.PATCH` (for example, `v1.1.0`). See the changelog for changes and use a tagged source snapshot when you need a reproducible script version.
+
 Discovers WordPress web applications through the RunCloud API and force-installs and activates the repository-hosted plugin ZIP on eligible sites using root SSH and WP-CLI.
 
 ## Script version and releases
@@ -150,3 +160,8 @@ The script prints counts for successful installations, version-based skips, and 
 The installer downloads `conversal-admin-3.0.4.zip` from this public repository and verifies its pinned SHA-256 checksum before installation. If the downloaded file does not match the expected checksum, installation stops. To update the plugin ZIP, upload the replacement and update `PLUGIN_SHA256` in the script to the replacement file's independently computed SHA-256.
 
 Existing plugin installations are overwritten because `--force` is used. The plugin is activated automatically on sites that meet the version requirement. The install command uses WP-CLI’s `--skip-plugins` flag so existing plugins are not loaded during the install command; this does not mean the newly installed plugin will remain inactive.
+
+
+## Script releases and versioning
+
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`): increase the major number for incompatible changes, the minor number for backward-compatible features, and the patch number for backward-compatible fixes. Update `SCRIPT_VERSION` in `install_runcloud_plugin.py` and add release notes to `CHANGELOG.md` for each release. Tag release commits as `vMAJOR.MINOR.PATCH` and publish a GitHub Release from the matching tag. JSON reports include the script version.
