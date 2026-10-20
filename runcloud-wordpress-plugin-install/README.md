@@ -2,6 +2,10 @@
 
 Discovers WordPress web applications through the RunCloud API and force-installs and activates the repository-hosted plugin ZIP on eligible sites using root SSH and WP-CLI.
 
+## Script version and releases
+
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.1.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
+
 ## What it does
 
 1. Lists RunCloud servers (all servers by default, or one selected with `--server`).
@@ -106,7 +110,7 @@ python3 install_runcloud_plugin.py --server 12345 --update-plugin akismet
 python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordfence --dry-run
 ```
 
-Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `not_found`, `would_update`, or `failed`), and message. WP-CLI performs the update and reports if the plugin was already current. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
+Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before` and `plugin_version_after` (null if a version could not be read). WP-CLI performs the update; unchanged versions are reported as `current` when both version reads succeed. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
 
 ## Remove a plugin from sites
 
@@ -137,7 +141,7 @@ Removal results are written to `runcloud-plugin-removal.json` by default, or to 
 python3 install_runcloud_plugin.py --dry-run
 ```
 
-A dry run does not install the plugin. With a minimum version specified, it reports that the version check would be performed; run without `--dry-run` to actually check versions and install eligible sites. In `--remove-plugin` mode, a dry run checks installed plugins and records which ones would be removed, without uninstalling them. In `--update-plugin` mode, a dry run checks installed plugins and records which ones would be updated, without changing them.
+A dry run does not install the plugin. With a minimum version specified, it reports that the version check would be performed; run without `--dry-run` to actually check versions and install eligible sites. In `--remove-plugin` mode, a dry run checks installed plugins and records which ones would be removed, without uninstalling them. In `--update-plugin` mode, a dry run checks installed plugins and records which ones would be updated, without changing them. The update dry-run records the installed plugin version as both before and after, because no update is performed.
 
 ## Reports
 
