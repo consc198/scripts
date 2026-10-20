@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.1.1`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.2.0`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -50,7 +50,13 @@ export MAILGUN_AUDIT_CSV='mailgun_domain_audit.csv'
 
 ## Run
 
-From this directory:
+Show the script version (this does not require an API key):
+
+```bash
+python3 mailgun_domain_audit.py --version
+```
+
+From this directory, run the audit:
 
 ```bash
 python3 mailgun_domain_audit.py
