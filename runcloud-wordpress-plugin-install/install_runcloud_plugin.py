@@ -8,6 +8,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +17,7 @@ PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-w
 PLUGIN_SHA256 = "1e2e98cbcd8fa20da8f996f82f91ca58feac210e434461f1c2b01cdd7c003ff6"
 SSH_PORT = 22
 SSH_USER = "root"
+SERVER_DISCOVERY_ATTEMPTS = 3
 
 
 def api_get(token, path, params=None):
@@ -60,6 +62,24 @@ def get_all_pages(token, path):
             break
         page += 1
     return results
+
+def get_server_webapps_with_retries(token, server_id, server_name):
+    """Retry one server's web-app discovery up to three total attempts."""
+    for attempt in range(1, SERVER_DISCOVERY_ATTEMPTS + 1):
+        try:
+            return get_all_pages(token, f"/servers/{server_id}/webapps")
+        except Exception as exc:
+            if attempt >= SERVER_DISCOVERY_ATTEMPTS:
+                raise RuntimeError(
+                    f"Web-app discovery failed after {SERVER_DISCOVERY_ATTEMPTS} attempts: {exc}"
+                ) from exc
+            delay = 2 ** attempt
+            print(
+                f"  API error listing web apps for {server_name} "
+                f"(attempt {attempt}/{SERVER_DISCOVERY_ATTEMPTS}): {exc}. "
+                f"Retrying in {delay}s..."
+            )
+            time.sleep(delay)
 
 
 def get_webapp_ssh_user(token, server_id, webapp):
@@ -266,7 +286,7 @@ def main():
         server_name = server.get("name", f"server-{server_id}")
         print(f"\\n[{server_name}] ({server.get('ipAddress', 'unknown IP')})")
         try:
-            webapps = get_all_pages(token, f"/servers/{server_id}/webapps")
+            webapps = get_server_webapps_with_retries(token, server_id, server_name)
             webapps_by_server[server_id] = webapps
             wordpress_apps = [app for app in webapps if app.get("type") == "wordpress"]
             print(f"  Found {len(webapps)} web app(s), {len(wordpress_apps)} WordPress.")
