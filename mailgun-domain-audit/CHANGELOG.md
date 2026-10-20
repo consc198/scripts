@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.4] - 2026-10-20
+
+### Fixed
+- Explicitly request Mailgun sending and receiving DNS records with `h:with_dns=true`, and preserve top-level DNS record arrays when unwrapping the domain object.
+
 ## [0.3.3] - 2026-10-20
 
 ### Changed
