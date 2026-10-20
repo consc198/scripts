@@ -21,6 +21,8 @@ import os
 import sys
 import time
 import subprocess
+from datetime import datetime, timezone
+from email.utils import format_datetime
 from urllib.parse import quote
 
 import requests
@@ -96,6 +98,99 @@ def api_get(path, params=None, retries=3):
     if last_error:
         raise last_error
     raise RuntimeError(f"Request failed: {url}")
+
+
+def api_post(path, json_body, retries=3):
+    """POST to a Mailgun endpoint, retrying rate limits and transient server errors."""
+    url = f"{BASE_URL}{path}"
+    for attempt in range(retries):
+        try:
+            response = SESSION.post(url, json=json_body, timeout=30)
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt < retries - 1:
+                    retry_after = response.headers.get("Retry-After")
+                    try:
+                        delay = max(1, int(retry_after)) if retry_after else 2 ** (attempt + 1)
+                    except ValueError:
+                        delay = 2 ** (attempt + 1)
+                    print(
+                        f"Temporary HTTP {response.status_code}; retrying in {delay}s...",
+                        file=sys.stderr,
+                    )
+                    time.sleep(delay)
+                    continue
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException:
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            raise
+    raise RuntimeError(f"Request failed: {url}")
+
+
+def current_month_utc_period():
+    """Return the current month's start and current time in UTC."""
+    end = datetime.now(timezone.utc)
+    start = end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    label = (
+        f"{start.strftime('%Y-%m-%d %H:%M:%S')} UTC to "
+        f"{end.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+    )
+    return start, end, label
+
+
+def get_accepted_outgoing_by_domain():
+    """Fetch accepted outgoing message counts by Mailgun domain for this month."""
+    start, end, period_label = current_month_utc_period()
+    counts = {}
+    skip = 0
+    limit = 1000
+
+    while True:
+        payload = {
+            "start": format_datetime(start),
+            "end": format_datetime(end),
+            "resolution": "day",
+            "dimensions": ["domain"],
+            "metrics": ["accepted_outgoing_count"],
+            "pagination": {"skip": skip, "limit": limit},
+        }
+        response = api_post("/v1/analytics/metrics", payload)
+        items = response.get("items", [])
+        if not isinstance(items, list):
+            raise ValueError("Unexpected Mailgun metrics response: 'items' is not a list")
+
+        for item in items:
+            dimensions = item.get("dimensions", [])
+            domain = None
+            if isinstance(dimensions, dict):
+                domain = dimensions.get("domain")
+            elif isinstance(dimensions, list):
+                for dimension in dimensions:
+                    if not isinstance(dimension, dict):
+                        continue
+                    if dimension.get("dimension") == "domain" or dimension.get("name") == "domain":
+                        domain = dimension.get("value", dimension.get("label"))
+                        break
+            metrics = item.get("metrics", {})
+            if domain and isinstance(metrics, dict):
+                value = metrics.get("accepted_outgoing_count")
+                if value is not None:
+                    counts[str(domain).strip().lower().rstrip(".")] = value
+
+        pagination = response.get("pagination", {})
+        total = pagination.get("total")
+        if total is not None:
+            skip += len(items)
+            if skip >= int(total):
+                break
+        elif len(items) < limit:
+            break
+        else:
+            skip += len(items)
+
+    return counts, period_label
 
 
 def get_all_domains():
@@ -376,7 +471,14 @@ def report_mailgun_domains_missing_from_runcloud(mailgun_domains, runcloud_domai
 
 
 def write_runcloud_report(missing, output_path="mailgun_domains_missing_in_runcloud.csv"):
-    fields = ["mailgun_domain", "normalized_domain", "mailgun_state"]
+    fields = [
+        "mailgun_domain",
+        "normalized_domain",
+        "mailgun_state",
+        "accepted_outgoing_count",
+        "accepted_period_utc",
+        "accepted_metrics_error",
+    ]
     with open(output_path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
@@ -579,6 +681,24 @@ def main():
             print(f"ERROR retrieving RunCloud domains: {exc}", file=sys.stderr)
             return 1
         missing = report_mailgun_domains_missing_from_runcloud(domains, runcloud_domains)
+        if missing:
+            _, _, period_label = current_month_utc_period()
+            try:
+                accepted_counts, period_label = get_accepted_outgoing_by_domain()
+                for row in missing:
+                    key = str(row["mailgun_domain"]).strip().lower().rstrip(".")
+                    row["accepted_outgoing_count"] = accepted_counts.get(key, 0)
+                    row["accepted_metrics_error"] = ""
+            except (requests.RequestException, ValueError, RuntimeError) as exc:
+                print(
+                    f"WARNING: could not retrieve Mailgun accepted outgoing metrics: {exc}",
+                    file=sys.stderr,
+                )
+                for row in missing:
+                    row["accepted_outgoing_count"] = "UNAVAILABLE"
+                    row["accepted_metrics_error"] = str(exc)
+            for row in missing:
+                row["accepted_period_utc"] = period_label
         report_path = os.environ.get(
             "RUNCLOUD_MISSING_CSV", "mailgun_domains_missing_in_runcloud.csv"
         )
