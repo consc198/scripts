@@ -200,7 +200,7 @@ def update_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
     except Exception as exc:
         return "failed", f"Update command completed but could not verify the installed version: {exc}", matched_plugin, installed_before, available_version, None
 
-    if installed_after and installed_before and installed_after != installed_before:
+    if installed_after and installed_after != installed_before:
         status = "updated"
         message = f"Plugin version changed from {installed_before} to {installed_after}"
         print(f"[UPDATED] {server_name} / {webapp_name}: {matched_plugin} {installed_before} -> {installed_after}")
@@ -542,9 +542,9 @@ def main():
             elif args.update_plugin:
                 for plugin_requested in args.update_plugin:
                     matched_plugin = None
-                    version_before = version_after = None
+                    version_before = available_version = version_after = None
                     try:
-                        status, message, matched_plugin, version_before, version_after = update_plugin(
+                        status, message, matched_plugin, version_before, available_version, version_after = update_plugin(
                             server, app, webapp_user, plugin_requested, args.dry_run
                         )
                     except Exception as exc:
@@ -564,6 +564,7 @@ def main():
                         "plugin_requested": plugin_requested,
                         "plugin_matched": matched_plugin,
                         "plugin_version_before": version_before,
+                        "plugin_update_available_version": available_version,
                         "plugin_version_after": version_after,
                         "script_version": SCRIPT_VERSION,
                         "wordpress_version": None,
