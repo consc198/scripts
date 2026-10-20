@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.2.0`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.0`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -11,7 +11,8 @@ The tool inventories domains in a Mailgun account and writes a CSV report with a
 - Checks DMARC using the Mailgun DMARC records endpoint.
 - Exports results to CSV.
 - Uses the **EU API by default**; the API base can be overridden through an environment variable.
-- Reads the API key from a local `apikey.txt` file by default, with an optional environment-variable override.
+- Reads the Mailgun API key from local `apikey.txt`, with an optional environment-variable override.
+- Optionally compares Mailgun sending domains with domains configured across RunCloud servers and web applications.
 
 ## Requirements
 
@@ -46,7 +47,21 @@ Optional output path:
 export MAILGUN_AUDIT_CSV='mailgun_domain_audit.csv'
 ```
 
-**Security:** `apikey.txt` contains a secret. Keep it local, do not commit it, and restrict its filesystem permissions where supported (for example, `chmod 600 apikey.txt` on macOS/Linux). The repository includes a `.gitignore` rule for this filename.
+### Optional RunCloud comparison
+
+To enable the comparison, create `runcloud_apikey.txt` beside the script and put your RunCloud API token on one line. RunCloud API access must be enabled for your account. You can instead set `RUNCLOUD_API_KEY`; that environment variable takes precedence over the file.
+
+Run the audit and compare Mailgun domains against RunCloud:
+
+```bash
+python3 mailgun_domain_audit.py --runcloud-check
+```
+
+The script checks domains across RunCloud servers and web applications, then writes `mailgun_domains_missing_in_runcloud.csv` with any Mailgun domains that could not be found. Set `RUNCLOUD_MISSING_CSV` to change the report path.
+
+For normalization, a leading `mg.` is removed from Mailgun domain names (so `mg.stonedesign.be` is compared as `stonedesign.be`); a leading `www.` is removed from RunCloud domain names. Other domain names are compared as provided. The comparison is read-only.
+
+**Security:** `apikey.txt` and `runcloud_apikey.txt` contain secrets. Keep them local, do not commit them, and restrict their filesystem permissions where supported (for example, `chmod 600 apikey.txt runcloud_apikey.txt` on macOS/Linux). The repository includes `.gitignore` rules for these filenames.
 
 ## Run
 
@@ -89,7 +104,8 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 ## Project files
 
 - `mailgun_domain_audit.py` — audit script.
-- `apikey.txt` — local secret file; do not commit.
+- `apikey.txt` — local Mailgun secret; do not commit.
+- `runcloud_apikey.txt` — optional local RunCloud API token; do not commit.
 - `README.md` — setup, usage, and limitations.
 - `CHANGELOG.md` — notable changes by version.
 - `VERSION` — current project version.
