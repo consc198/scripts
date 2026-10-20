@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.3] - 2026-10-20
+
+### Changed
+- Normalize `.conversalmail.be` and `.conversalhosting.be` Mailgun domains to their first label for RunCloud comparison (for example, `floorsandmore.conversalmail.be` becomes `floorsandmore`).
+
 ## [0.3.2] - 2026-10-20
 
 ### Fixed
