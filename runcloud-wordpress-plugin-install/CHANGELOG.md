@@ -1,15 +1,19 @@
 # Changelog
 
-This project uses [Semantic Versioning](https://semver.org/): MAJOR.MINOR.PATCH. Release tags should use the `v` prefix (for example, `v1.1.0`).
+Notable changes to the RunCloud WordPress Plugin Installer are documented here.
+
+This project uses [Semantic Versioning](https://semver.org/). Release tags use the format `vMAJOR.MINOR.PATCH`.
 
 ## [1.1.0] - 2026-10-20
 
 ### Added
-- `--version` prints the script version without requiring RunCloud credentials.
-- Every JSON report entry includes `script_version`.
-- Plugin update reports include `plugin_version_before` and `plugin_version_after`, obtained from WP-CLI.
-- Plugin updates distinguish `updated` from `current` when both versions are known.
+- Add `--version` so the script version can be checked without API credentials.
+- Include `script_version` in JSON reports.
+- Track plugin versions before and after update attempts.
+- Report the update version when the configured WordPress update source provides one.
+- Distinguish plugins that were updated from plugins that were already current.
+- Document release tagging and the versioning policy.
 
 ### Notes
-- This changelog records the intended release version; a Git tag and GitHub Release still need to be published separately.
-- Plugin version fields can be `null` when WP-CLI cannot retrieve a version.
+- Plugin version detection relies on WP-CLI's `plugin list` output.
+- Live RunCloud and WordPress server testing has not been performed as part of this change.
