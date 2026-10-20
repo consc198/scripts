@@ -16,6 +16,7 @@ could not confidently classify a record and should not be treated as a failure.
 
 import argparse
 import csv
+import json
 import os
 import sys
 import time
@@ -250,7 +251,7 @@ def runcloud_get(path, token, params=None, retries=3):
             raise RuntimeError(f"RunCloud HTTP {status_code} for {url}{suffix}")
 
         try:
-            return requests.models.complexjson.loads(body)
+            return json.loads(body)
         except ValueError as exc:
             raise RuntimeError(f"RunCloud returned invalid JSON for {url}: {exc}") from exc
 
