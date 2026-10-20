@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.1] - 2026-10-20
+
+### Changed
+- Always read the RunCloud API token from `runcloud_apikey.txt`; ignore `RUNCLOUD_API_KEY`.
+
 ## [0.3.0] - 2026-10-20
 
 ### Added
