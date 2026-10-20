@@ -6,7 +6,7 @@ Requires:
 
 Configuration:
     apikey.txt           Mailgun API key, unless MAILGUN_API_KEY is set.
-    runcloud_apikey.txt  RunCloud API token for --runcloud-check, unless RUNCLOUD_API_KEY is set.
+    runcloud_apikey.txt  RunCloud API token for --runcloud-check.
     MAILGUN_API_BASE     Optional API base URL. Defaults to the EU endpoint.
 
 This script reports Mailgun DNS verification and DMARC API results separately.
@@ -139,7 +139,7 @@ def load_runcloud_api_key():
             key = handle.read().strip()
     except FileNotFoundError:
         print(
-            f"ERROR: RunCloud API token not found. Create {RUNCLOUD_API_KEY_FILE} or set RUNCLOUD_API_KEY.",
+            f"ERROR: RunCloud API token not found. Create {RUNCLOUD_API_KEY_FILE}.",
             file=sys.stderr,
         )
         return None
@@ -279,13 +279,15 @@ def record_status(record):
         if isinstance(record.get(key), bool):
             return "PASS" if record[key] else "FAIL"
 
-    for key in ("status", "state"):
+    # Mailgun's sending_dns_records commonly uses valid="valid" or
+    # valid="invalid" (strings, not booleans), so interpret those explicitly.
+    for key in ("valid", "verified", "status", "state"):
         value = record.get(key)
         if isinstance(value, str):
-            value = value.lower()
-            if value in {"valid", "verified", "active", "pass", "ok"}:
+            value = value.strip().lower()
+            if value in {"valid", "verified", "active", "pass", "passed", "ok", "true"}:
                 return "PASS"
-            if value in {"invalid", "unverified", "fail", "failed", "error"}:
+            if value in {"invalid", "unverified", "fail", "failed", "error", "false"}:
                 return "FAIL"
 
     return "UNKNOWN"
