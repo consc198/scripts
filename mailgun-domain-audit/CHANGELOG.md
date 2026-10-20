@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.13] - 2026-10-20
+
+### Fixed
+- For dedicated Conversal Mailgun domains, ignore dots and hyphens when matching the customer label against the full RunCloud domain (for example, `asomartinus.conversalmail.be` can match `aso.martinusasse.be`).
+
 ## [0.3.12] - 2026-10-20
 
 ### Fixed
