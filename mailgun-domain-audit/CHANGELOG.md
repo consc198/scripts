@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.0] - 2026-10-20
+
+### Added
+- Add optional `--runcloud-check` to compare Mailgun domains against domains configured on RunCloud servers and web applications.
+- Read the RunCloud API token from `runcloud_apikey.txt`, with `RUNCLOUD_API_KEY` as an environment-variable override.
+- Write missing domains to `mailgun_domains_missing_in_runcloud.csv` (customizable with `RUNCLOUD_MISSING_CSV`).
+
 ## [0.2.0] - 2026-10-20
 
 ### Added
