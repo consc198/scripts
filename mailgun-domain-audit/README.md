@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.15`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.16`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -64,7 +64,7 @@ The script still retrieves the Mailgun domain list for comparison, but skips per
 python3 mailgun_domain_audit.py --dns-check --runcloud-check
 ```
 
-The RunCloud check writes `mailgun_domains_missing_in_runcloud.csv` with any Mailgun domains that could not be found. Set `RUNCLOUD_MISSING_CSV` to change the report path. While it runs, the terminal displays a live status line showing which server, web app, and pagination page is being processed.
+The RunCloud check writes `mailgun_domains_missing_in_runcloud.csv` with any Mailgun domains that could not be found. Set `RUNCLOUD_MISSING_CSV` to change the report path. While it runs, the terminal displays a live status line showing which server, web app, and pagination page is being processed. The report also includes Mailgun's `accepted_outgoing_count` for each missing domain from the start of the current month through the report run time, with the date range shown in UTC. This metric counts outgoing send requests accepted and queued by Mailgun; batch sends can add an extra accepted event. If the Metrics API is unavailable, the report marks the count as `UNAVAILABLE` and includes the error instead of silently treating it as zero.
 
 For normalization, a leading `mg.` or `mgn.` is removed from Mailgun domain names (so `mg.stonedesign.be` is compared as `stonedesign.be` and `mgn.gunterbroodcoorens.com` as `gunterbroodcoorens.com`). Mailgun domains ending in `.conversalmail.be` or `.conversalhosting.be` use their first label as the customer/site name (so `floorsandmore.conversalmail.be` can match a RunCloud domain named `floorsandmore` or a full domain such as `floorsandmore.be`, `floorsandmore.com`, or another TLD). For these Conversal domains only, matching accepts a RunCloud domain that is exactly the customer/site name or starts with that name followed by a dot, regardless of the suffix. If exact label matching fails, it ignores dots and hyphens when comparing the customer label against the full RunCloud domain (so `mercomachines.conversalmail.be` can match `merco-machines.com`, and `asomartinus.conversalmail.be` can match `aso.martinusasse.be`). A leading `www.` is removed from both Mailgun and RunCloud domain names, so `www.solicom-verisafe.com` matches `solicom-verisafe.com`. For non-Conversal domains, a RunCloud subdomain ending in the normalized Mailgun domain also counts as a match (so `mg.allwaves.surf` can match `old.allwaves.surf`). Other domain names are compared as provided. The comparison is read-only.
 
