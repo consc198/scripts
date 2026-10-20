@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.2`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.3`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -59,7 +59,7 @@ python3 mailgun_domain_audit.py --runcloud-check
 
 The script checks domains across RunCloud servers and web applications, then writes `mailgun_domains_missing_in_runcloud.csv` with any Mailgun domains that could not be found. Set `RUNCLOUD_MISSING_CSV` to change the report path.
 
-For normalization, a leading `mg.` is removed from Mailgun domain names (so `mg.stonedesign.be` is compared as `stonedesign.be`); a leading `www.` is removed from RunCloud domain names. Other domain names are compared as provided. The comparison is read-only.
+For normalization, a leading `mg.` is removed from Mailgun domain names (so `mg.stonedesign.be` is compared as `stonedesign.be`). Mailgun domains ending in `.conversalmail.be` or `.conversalhosting.be` are compared using only their first label (so `floorsandmore.conversalmail.be` is compared as `floorsandmore`). A leading `www.` is removed from RunCloud domain names. Other domain names are compared as provided. The comparison is read-only.
 
 **Security:** `apikey.txt` and `runcloud_apikey.txt` contain secrets. Keep them local, do not commit them, and restrict their filesystem permissions where supported (for example, `chmod 600 apikey.txt runcloud_apikey.txt` on macOS/Linux). The repository includes `.gitignore` rules for these filenames.
 
