@@ -342,9 +342,14 @@ def report_mailgun_domains_missing_from_runcloud(mailgun_domains, runcloud_domai
         normalized_mailgun = str(mailgun_domain).strip().lower().rstrip(".")
         is_conversal_domain = any(normalized_mailgun.endswith(suffix) for suffix in conversal_suffixes)
         if root_domain and not matched and is_conversal_domain:
+            # First try exact customer-label matching with any TLD. If that
+            # fails, allow hyphens to differ (e.g. mercomachines vs
+            # merco-machines.com), but only for these dedicated Conversal domains.
+            normalized_root = root_domain.replace("-", "")
             matched = any(
                 runcloud_domain == root_domain
                 or runcloud_domain.startswith(root_domain + ".")
+                or runcloud_domain.split(".", 1)[0].replace("-", "") == normalized_root
                 for runcloud_domain in runcloud_domains
             )
 
