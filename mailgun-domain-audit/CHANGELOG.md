@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.6] - 2026-10-20
+
+### Changed
+- Use the system `curl` client for RunCloud API requests because the same requests succeed with curl but are challenged by Cloudflare when sent through Python `requests`.
+- Pass the RunCloud bearer token through curl's stdin configuration rather than as a command-line argument.
+
 ## [0.3.5] - 2026-10-20
 
 ### Changed
