@@ -183,7 +183,11 @@ def normalize_runcloud_domain(domain):
 def runcloud_get(path, token, params=None, retries=3):
     """GET a RunCloud API endpoint with retry handling for transient errors."""
     url = f"{RUNCLOUD_BASE_URL}{path}"
-    headers = {"Accept": "application/json", "Authorization": f"Bearer {token}"}
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
     for attempt in range(retries):
         try:
             response = requests.get(url, headers=headers, params=params, timeout=30)
@@ -200,7 +204,17 @@ def runcloud_get(path, token, params=None, retries=3):
                     )
                     time.sleep(delay)
                     continue
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                # Include the API's response body to make 4xx diagnostics actionable.
+                body = response.text.strip()
+                if body:
+                    raise requests.HTTPError(
+                        f"{exc}; response body: {body[:1000]}",
+                        response=response,
+                    ) from exc
+                raise
             return response.json()
         except requests.RequestException:
             if attempt < retries - 1:
