@@ -305,12 +305,25 @@ def get_runcloud_domains(token):
 
 
 def report_mailgun_domains_missing_from_runcloud(mailgun_domains, runcloud_domains):
-    """Return Mailgun domains whose normalized root domain is absent from RunCloud."""
+    """Return Mailgun domains that have no matching normalized RunCloud domain."""
     missing = []
+    conversal_suffixes = (".conversalmail.be", ".conversalhosting.be")
     for item in mailgun_domains:
         mailgun_domain = item.get("name", "")
         root_domain = normalize_mailgun_domain(mailgun_domain)
-        if root_domain and root_domain not in runcloud_domains:
+        matched = bool(root_domain and root_domain in runcloud_domains)
+
+        # Dedicated Conversal Mailgun domains identify a customer by their first
+        # label; RunCloud may store that site's full domain (e.g. delta-temp.com).
+        normalized_mailgun = str(mailgun_domain).strip().lower().rstrip(".")
+        is_conversal_domain = any(normalized_mailgun.endswith(suffix) for suffix in conversal_suffixes)
+        if root_domain and not matched and is_conversal_domain:
+            matched = any(
+                runcloud_domain.split(".", 1)[0] == root_domain
+                for runcloud_domain in runcloud_domains
+            )
+
+        if root_domain and not matched:
             missing.append({
                 "mailgun_domain": mailgun_domain,
                 "normalized_domain": root_domain,
