@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.10`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.11`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -64,7 +64,7 @@ The script still retrieves the Mailgun domain list for comparison, but skips per
 python3 mailgun_domain_audit.py --dns-check --runcloud-check
 ```
 
-The RunCloud check writes `mailgun_domains_missing_in_runcloud.csv` with any Mailgun domains that could not be found. Set `RUNCLOUD_MISSING_CSV` to change the report path.
+The RunCloud check writes `mailgun_domains_missing_in_runcloud.csv` with any Mailgun domains that could not be found. Set `RUNCLOUD_MISSING_CSV` to change the report path. While it runs, the terminal displays a live status line showing which server, web app, and pagination page is being processed.
 
 For normalization, a leading `mg.` or `mgn.` is removed from Mailgun domain names (so `mg.stonedesign.be` is compared as `stonedesign.be` and `mgn.gunterbroodcoorens.com` as `gunterbroodcoorens.com`). Mailgun domains ending in `.conversalmail.be` or `.conversalhosting.be` use their first label as the customer/site name (so `floorsandmore.conversalmail.be` can match a RunCloud domain named `floorsandmore` or a full domain such as `floorsandmore.be`, `floorsandmore.com`, or another TLD). For these Conversal domains only, matching accepts a RunCloud domain that is exactly the customer/site name or starts with that name followed by a dot, regardless of the suffix. A leading `www.` is removed from RunCloud domain names. Other domain names are compared as provided. The comparison is read-only.
 
