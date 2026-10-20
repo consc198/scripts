@@ -3,3 +3,7 @@ apikey.txt
 
 # Generated audit reports
 mailgun_domain_audit.csv
+
+# RunCloud comparison report and local credentials
+runcloud_apikey.txt
+mailgun_domains_missing_in_runcloud.csv
