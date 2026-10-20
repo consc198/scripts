@@ -115,8 +115,18 @@ def get_all_domains():
 
 
 def get_domain_details(domain):
-    data = api_get(f"/v4/domains/{quote(domain, safe='')}")
-    return data.get("domain", data)
+    # Explicitly request DNS records; some responses omit them unless h:with_dns is set.
+    data = api_get(
+        f"/v4/domains/{quote(domain, safe='')}",
+        params={"h:with_dns": "true"},
+    )
+    # Mailgun returns DNS records at the top level, alongside the nested domain object.
+    details = data.get("domain", data)
+    if isinstance(details, dict):
+        for key in ("sending_dns_records", "receiving_dns_records"):
+            if key not in details and key in data:
+                details[key] = data[key]
+    return details
 
 
 def get_dmarc(domain):
