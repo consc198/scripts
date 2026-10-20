@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.15] - 2026-10-20
+
+### Fixed
+- Match non-Conversal Mailgun domains against RunCloud subdomains ending in the normalized domain, so `mg.allwaves.surf` matches `old.allwaves.surf`.
+
 ## [0.3.14] - 2026-10-20
 
 ### Fixed
