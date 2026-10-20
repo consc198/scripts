@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.2.0] - 2026-10-20
+
+### Added
+- Add `--version` to print the script name and version from `VERSION`, without requiring an API key.
+
 ## [0.1.1] - 2026-10-20
 
 ### Changed
