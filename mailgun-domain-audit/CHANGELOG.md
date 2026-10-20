@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.2] - 2026-10-20
+
+### Fixed
+- Recognize Mailgun DNS record verification values such as `valid: "valid"` and `valid: "invalid"`, correctly classifying SPF, DKIM, and tracking CNAME records.
+
 ## [0.3.1] - 2026-10-20
 
 ### Changed
