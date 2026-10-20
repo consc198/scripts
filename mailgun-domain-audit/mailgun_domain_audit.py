@@ -14,6 +14,7 @@ API responses can vary by Mailgun account/features; UNKNOWN means the script
 could not confidently classify a record and should not be treated as a failure.
 """
 
+import argparse
 import csv
 import os
 import sys
@@ -48,7 +49,7 @@ def load_api_key():
     return key
 
 
-API_KEY = load_api_key()
+API_KEY = None
 BASE_URL = os.environ.get(
     "MAILGUN_API_BASE",
     "https://api.eu.mailgun.net",
@@ -56,8 +57,6 @@ BASE_URL = os.environ.get(
 OUTPUT_FILE = os.environ.get("MAILGUN_AUDIT_CSV", "mailgun_domain_audit.csv")
 
 SESSION = requests.Session()
-if API_KEY:
-    SESSION.auth = ("api", API_KEY)
 SESSION.headers.update({"Accept": "application/json"})
 
 
@@ -225,7 +224,39 @@ def audit_domain(domain_obj):
     }
 
 
+def read_version():
+    """Read the project version from the VERSION file beside this script."""
+    version_file = os.path.join(SCRIPT_DIR, "VERSION")
+    try:
+        with open(version_file, "r", encoding="utf-8") as handle:
+            version = handle.read().strip()
+    except OSError as exc:
+        raise RuntimeError(f"Unable to read version file {version_file}: {exc}") from exc
+    if not version:
+        raise RuntimeError(f"Version file {version_file} is empty.")
+    return version
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Read-only audit of Mailgun domain DNS authentication.")
+    try:
+        version = read_version()
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {version}",
+        help="show the script version and exit",
+    )
+    parser.parse_args()
+
+    global API_KEY
+    API_KEY = load_api_key()
+    if API_KEY:
+        SESSION.auth = ("api", API_KEY)
+
     if not API_KEY:
         print(
             "ERROR: add your Mailgun API key to apikey.txt or set MAILGUN_API_KEY.",
