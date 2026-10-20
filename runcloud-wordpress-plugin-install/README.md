@@ -6,6 +6,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 
 1. Lists RunCloud servers (all servers by default, or one selected with `--server`).
 2. Finds WordPress web apps and resolves each app's RunCloud system user.
+   - If listing a server's web apps fails due to a RunCloud API error, the script retries that server up to three total attempts, waiting 2 seconds and then 4 seconds between retries. After the final failure, it records the discovery error and continues to the next server.
 3. Connects to each selected server as `root` over SSH port `22`.
 4. Runs WP-CLI as the app's Linux user using `sudo -u`.
 5. Optionally checks the site's WordPress version and skips sites below a specified minimum.
