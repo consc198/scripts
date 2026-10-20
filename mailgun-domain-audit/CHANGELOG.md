@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.9] - 2026-10-20
+
+### Fixed
+- Match `.conversalmail.be` and `.conversalhosting.be` Mailgun domains against RunCloud domains sharing the customer label, even when RunCloud stores the full domain (for example, `delta-temp.conversalmail.be` matches `delta-temp.com`).
+
 ## [0.3.8] - 2026-10-20
 
 ### Fixed
