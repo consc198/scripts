@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.6`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.7`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -52,13 +52,19 @@ export MAILGUN_AUDIT_CSV='mailgun_domain_audit.csv'
 
 To enable the comparison, create `runcloud_apikey.txt` beside the script and put your RunCloud API token on one line. RunCloud API access must be enabled for your account. The script always reads the token from `runcloud_apikey.txt`; `RUNCLOUD_API_KEY` is not used.
 
-Run the audit and compare Mailgun domains against RunCloud:
+Compare Mailgun domains against RunCloud without running the DNS/DMARC audit:
 
 ```bash
 python3 mailgun_domain_audit.py --runcloud-check
 ```
 
-The script checks domains across RunCloud servers and web applications, then writes `mailgun_domains_missing_in_runcloud.csv` with any Mailgun domains that could not be found. Set `RUNCLOUD_MISSING_CSV` to change the report path.
+The script still retrieves the Mailgun domain list for comparison, but skips per-domain DNS and DMARC requests. To run both checks in one invocation, use:
+
+```bash
+python3 mailgun_domain_audit.py --dns-check --runcloud-check
+```
+
+The RunCloud check writes `mailgun_domains_missing_in_runcloud.csv` with any Mailgun domains that could not be found. Set `RUNCLOUD_MISSING_CSV` to change the report path.
 
 For normalization, a leading `mg.` is removed from Mailgun domain names (so `mg.stonedesign.be` is compared as `stonedesign.be`). Mailgun domains ending in `.conversalmail.be` or `.conversalhosting.be` are compared using only their first label (so `floorsandmore.conversalmail.be` is compared as `floorsandmore`). A leading `www.` is removed from RunCloud domain names. Other domain names are compared as provided. The comparison is read-only.
 
@@ -72,13 +78,13 @@ Show the script version (this does not require an API key):
 python3 mailgun_domain_audit.py --version
 ```
 
-From this directory, run the audit:
+From this directory, run the DNS/DMARC audit explicitly:
 
 ```bash
-python3 mailgun_domain_audit.py
+python3 mailgun_domain_audit.py --dns-check
 ```
 
-The script writes `mailgun_domain_audit.csv` and prints a summary to the terminal.
+This writes `mailgun_domain_audit.csv` and prints a summary to the terminal. For backward compatibility, running the script without a check flag still runs the DNS/DMARC audit.
 
 ## Interpreting results
 
