@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.1.1] - 2026-10-20
+
+### Changed
+- Read the Mailgun API key from `apikey.txt` in the project directory by default.
+- Keep `MAILGUN_API_KEY` as an optional override; the environment variable takes precedence over the file.
+
+### Security
+- Ignore `apikey.txt` and the generated CSV report via the project `.gitignore`.
+
 ## [0.1.0] - 2026-10-20
 
 ### Added
