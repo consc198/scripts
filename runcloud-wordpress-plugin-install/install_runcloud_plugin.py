@@ -15,6 +15,7 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/conversal-admin-3.0.4.zip"
 PLUGIN_SHA256 = "1e2e98cbcd8fa20da8f996f82f91ca58feac210e434461f1c2b01cdd7c003ff6"
+SCRIPT_VERSION = "1.1.0"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
@@ -110,14 +111,22 @@ def run_as_webapp_user(host, webapp_user, root_path, wp_args):
     return result.stdout.strip()
 
 
+def plugin_version(host, user, root, slug):
+    """Read the installed plugin version; return None if unavailable."""
+    try:
+        return run_as_webapp_user(host, user, root, f"plugin get {shlex.quote(slug)} --field=version --skip-plugins --skip-themes") or None
+    except Exception:
+        return None
+
+
 def update_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
     """Update an installed plugin to the latest version available to WordPress."""
     host = server.get("ipAddress")
     root_path = webapp.get("rootPath")
     if not host:
-        return "failed", "No server IP address", None
+        return "failed", "No server IP address", None, None, None
     if not root_path:
-        return "failed", "No web-app rootPath", None
+        return "failed", "No web-app rootPath", None, None, None
 
     server_name = server.get("name", f"server-{server['id']}")
     webapp_name = webapp.get("name", f"webapp-{webapp['id']}")
@@ -127,7 +136,7 @@ def update_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
             "plugin list --field=name --skip-plugins --skip-themes",
         )
     except Exception as exc:
-        return "failed", f"Could not list installed plugins: {exc}", None
+        return "failed", f"Could not list installed plugins: {exc}", None, None, None
 
     installed_plugins = [line.strip() for line in output.splitlines() if line.strip()]
     matched_plugin = next(
@@ -140,11 +149,12 @@ def update_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
     )
     if not matched_plugin:
         print(f"[NOT FOUND] {server_name} / {webapp_name}: {plugin_slug}")
-        return "not_found", "Plugin is not installed", None
+        return "not_found", "Plugin is not installed", None, None, None
 
+    before_version = plugin_version(host, webapp_user, root_path, matched_plugin)
     if dry_run:
         print(f"[DRY-RUN] Would update {matched_plugin} to the latest available version on {server_name} / {webapp_name}")
-        return "would_update", "Plugin is installed; dry-run did not update it", matched_plugin
+        return "would_update", "Plugin is installed; dry-run did not update it", matched_plugin, before_version, before_version
 
     try:
         output = run_as_webapp_user(
@@ -152,11 +162,13 @@ def update_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
             f"plugin update {shlex.quote(matched_plugin)} --skip-plugins --skip-themes",
         )
     except Exception as exc:
-        return "failed", f"Plugin was found ({matched_plugin}) but update failed: {exc}", matched_plugin
+        return "failed", f"Plugin was found ({matched_plugin}) but update failed: {exc}", matched_plugin, before_version, plugin_version(host, webapp_user, root_path, matched_plugin)
 
-    message = output or "WP-CLI update command completed; plugin may already be current"
-    print(f"[UPDATED/CURRENT] {server_name} / {webapp_name}: {matched_plugin}")
-    return "updated", message, matched_plugin
+    after_version = plugin_version(host, webapp_user, root_path, matched_plugin)
+    status = "current" if before_version and after_version and before_version == after_version else "updated"
+    message = output or "WP-CLI update command completed"
+    print(f"[{status.upper()}] {server_name} / {webapp_name}: {matched_plugin} ({before_version or 'unknown'} -> {after_version or 'unknown'})")
+    return status, message, matched_plugin, before_version, after_version
 
 
 def remove_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
@@ -272,6 +284,7 @@ def install_plugin(server, webapp, webapp_user, dry_run, minimum_version=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a plugin ZIP via root SSH.")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {SCRIPT_VERSION}")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
     parser.add_argument("--server", help="RunCloud server ID or exact server name. Omit to process all servers.")
     parser.add_argument("--webapp", action="append", help="Target a WordPress web app by RunCloud web app ID or exact name. May be repeated; names must match uniquely.")
@@ -488,8 +501,9 @@ def main():
             elif args.update_plugin:
                 for plugin_requested in args.update_plugin:
                     matched_plugin = None
+                    version_before = version_after = None
                     try:
-                        status, message, matched_plugin = update_plugin(
+                        status, message, matched_plugin, version_before, version_after = update_plugin(
                             server, app, webapp_user, plugin_requested, args.dry_run
                         )
                     except Exception as exc:
@@ -508,6 +522,9 @@ def main():
                         "rootPath": app.get("rootPath"),
                         "plugin_requested": plugin_requested,
                         "plugin_matched": matched_plugin,
+                        "plugin_version_before": version_before,
+                        "plugin_version_after": version_after,
+                        "script_version": SCRIPT_VERSION,
                         "wordpress_version": None,
                         "minimum_wordpress_version": None,
                         "status": status,
@@ -541,6 +558,8 @@ def main():
                     "message": message,
                 })
 
+    for entry in results:
+        entry.setdefault("script_version", SCRIPT_VERSION)
     report_path = args.removal_output if args.remove_plugin else (args.update_output if args.update_plugin else args.output)
     Path(report_path).write_text(json.dumps(results, indent=2), encoding="utf-8")
     failures = [r for r in results if r.get("status") == "failed"]
@@ -548,6 +567,7 @@ def main():
     print("\n" + "=" * 72)
     if args.update_plugin:
         updated = sum(r.get("status") == "updated" for r in results)
+        current = sum(r.get("status") == "current" for r in results)
         not_found = sum(r.get("status") == "not_found" for r in results)
         would_update = sum(r.get("status") == "would_update" for r in results)
         print("RUNCloud WORDPRESS PLUGIN UPDATE REPORT")
@@ -555,7 +575,8 @@ def main():
         print("Plugins requested:        " + ", ".join(args.update_plugin))
         print(f"Servers processed:        {len(servers)}")
         print(f"WordPress sites checked:  {wordpress_count}")
-        print(f"Updated / already current: {updated}")
+        print(f"Updated:                  {updated}")
+        print(f"Already current:          {current}")
         print(f"Not installed:            {not_found}")
         print(f"Would update (dry-run):   {would_update}")
     elif args.remove_plugin:
