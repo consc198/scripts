@@ -150,8 +150,13 @@ def load_runcloud_api_key():
 
 
 def normalize_mailgun_domain(domain):
-    """Convert a Mailgun sending subdomain such as mg.example.com to example.com."""
+    """Map Mailgun sending domains to the corresponding RunCloud lookup name."""
     domain = str(domain).strip().lower().rstrip(".")
+    # Dedicated customer subdomains use the first label as the hosted-site name.
+    for suffix in (".conversalmail.be", ".conversalhosting.be"):
+        if domain.endswith(suffix):
+            return domain[:-len(suffix)].split(".", 1)[0]
+    # Standard Mailgun sending subdomains map to their root domain.
     if domain.startswith("mg."):
         return domain[3:]
     return domain
