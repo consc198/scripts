@@ -266,9 +266,9 @@ def write_runcloud_report(missing, output_path="mailgun_domains_missing_in_runcl
         writer.writerows(missing)
     print(f"RunCloud comparison CSV written to: {output_path}")
     if missing:
-        print("\\nMAILGUN DOMAINS NOT FOUND IN RUNCLOUD")
+        print("\nMAILGUN DOMAINS NOT FOUND IN RUNCLOUD")
         for row in missing:
-            print(f"{row['mailgun_domain']}\\t=>\\t{row['normalized_domain']}")
+            print(f"{row['mailgun_domain']}\t=>\t{row['normalized_domain']}")
     else:
         print("All normalized Mailgun domains were found in RunCloud.")
 
