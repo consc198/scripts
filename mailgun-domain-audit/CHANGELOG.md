@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.7] - 2026-10-20
+
+### Changed
+- Add `--dns-check` to explicitly run the Mailgun SPF/DKIM/DMARC audit.
+- Make `--runcloud-check` skip per-domain DNS/DMARC checks when used alone; supplying both flags runs both checks. Running with no check flags preserves the previous default DNS audit.
+
 ## [0.3.6] - 2026-10-20
 
 ### Changed
