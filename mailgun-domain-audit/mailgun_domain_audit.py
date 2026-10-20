@@ -261,7 +261,7 @@ def runcloud_get(path, token, params=None, retries=3):
 
 def progress_status(message):
     """Update one terminal status line while RunCloud data is being collected."""
-    print(f"RunCloud check: {message}", end="\\r", file=sys.stderr, flush=True)
+    print(f"RunCloud check: {message}", end="\r", file=sys.stderr, flush=True)
 
 
 def runcloud_list_all(path, token, progress_label=None):
@@ -296,7 +296,6 @@ def get_runcloud_domains(token):
     servers = runcloud_list_all("/servers", token, "fetching server list")
     print(f"Retrieved {len(servers)} RunCloud server(s).", file=sys.stderr)
 
-    total_apps = 0
     processed_apps = 0
     for server_index, server in enumerate(servers, start=1):
         server_id = server.get("id")
@@ -308,7 +307,6 @@ def get_runcloud_domains(token):
             token,
             f"server {server_index}/{len(servers)} web apps",
         )
-        total_apps += len(apps)
         # App counts are discovered per server, so show the current server's count
         # while keeping the user informed about the phase and current work.
         for app_index, app in enumerate(apps, start=1):
@@ -325,7 +323,7 @@ def get_runcloud_domains(token):
                 name = item.get("name")
                 if name:
                     found.add(normalize_runcloud_domain(name))
-    print(" " * 120, end="\\r", file=sys.stderr, flush=True)
+    print(" " * 120, end="\r", file=sys.stderr, flush=True)
     print(f"RunCloud check: collected {len(found)} unique domain(s).", file=sys.stderr)
     return found
 
