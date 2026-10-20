@@ -611,7 +611,7 @@ def main():
     print("\n" + "=" * 72)
     if args.update_plugin:
         updated = sum(r.get("status") == "updated" for r in results)
-        current = sum(r.get("status") == "current" for r in results)
+        already_current = sum(r.get("status") == "already_current" for r in results)
         not_found = sum(r.get("status") == "not_found" for r in results)
         would_update = sum(r.get("status") == "would_update" for r in results)
         print("RUNCloud WORDPRESS PLUGIN UPDATE REPORT")
@@ -620,7 +620,7 @@ def main():
         print(f"Servers processed:        {len(servers)}")
         print(f"WordPress sites checked:  {wordpress_count}")
         print(f"Updated:                  {updated}")
-        print(f"Already current:          {current}")
+        print(f"Already current:          {already_current}")
         print(f"Not installed:            {not_found}")
         print(f"Would update (dry-run):   {would_update}")
     elif args.remove_plugin:
