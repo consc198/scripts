@@ -171,7 +171,11 @@ def normalize_mailgun_domain(domain):
     # Standard Mailgun sending prefixes map to their root domain.
     for prefix in ("mgn.", "mg."):
         if domain.startswith(prefix):
-            return domain[len(prefix):]
+            domain = domain[len(prefix):]
+            break
+    # Treat www.example.com and example.com as the same site on either side.
+    if domain.startswith("www."):
+        domain = domain[4:]
     return domain
 
 
