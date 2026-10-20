@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.11] - 2026-10-20
+
+### Added
+- Show live RunCloud progress updates while fetching server, web-app, and domain pages so the comparison visibly reports what it is processing.
+
 ## [0.3.10] - 2026-10-20
 
 ### Fixed
