@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.4`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.5`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
