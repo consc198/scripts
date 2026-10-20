@@ -339,12 +339,22 @@ def report_mailgun_domains_missing_from_runcloud(mailgun_domains, runcloud_domai
     for item in mailgun_domains:
         mailgun_domain = item.get("name", "")
         root_domain = normalize_mailgun_domain(mailgun_domain)
-        matched = bool(root_domain and root_domain in runcloud_domains)
 
         # Dedicated Conversal Mailgun domains identify a customer by their first
         # label; RunCloud may store that site's full domain with any TLD.
         normalized_mailgun = str(mailgun_domain).strip().lower().rstrip(".")
         is_conversal_domain = any(normalized_mailgun.endswith(suffix) for suffix in conversal_suffixes)
+        matched = bool(root_domain and root_domain in runcloud_domains)
+
+        # Some Mailgun domains represent a root site while RunCloud stores a
+        # subdomain, e.g. mg.allwaves.surf -> old.allwaves.surf. Keep this
+        # suffix match separate from the special Conversal customer-name logic.
+        if root_domain and not matched and not is_conversal_domain:
+            matched = any(
+                runcloud_domain.endswith("." + root_domain)
+                for runcloud_domain in runcloud_domains
+            )
+
         if root_domain and not matched and is_conversal_domain:
             # Ignore dots and hyphens in the full RunCloud domain when
             # comparing the customer label, so asomartinus can match
