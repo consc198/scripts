@@ -1,8 +1,8 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.2.0**
+**Current version: 1.3.0**
 
-Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required. A terminal progress bar shows webapp scan progress.
+Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required. A terminal progress bar shows webapp scan progress. The optional `--update-php-cli` flag also updates the server-level PHP-CLI version using the same source and target version options.
 
 ## Requirements
 
@@ -48,7 +48,7 @@ Apply changes by adding `--apply`:
 python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --apply
 ```
 
-Limit the run to one server:
+### Update server PHP-CLI too\n\nPHP-CLI is a server-level setting, separate from each webapp's PHP version. Add `--update-php-cli` to also update a server's PHP-CLI version when its current version matches `--source-php`; it will be changed to `--target-php`. For example, to update both webapps and PHP-CLI from PHP 8.1 to PHP 8.2:\n\n```bash\npython3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --update-php-cli\npython3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --update-php-cli --apply\n```\n\nThe script checks the server's `phpCLIVersion` field and calls `PATCH /servers/{serverId}/php/cli` for matching servers. Since this setting applies to the whole server, it is evaluated once per server, not once per webapp.\n\nLimit the run to one server:
 
 ```bash
 python3 upgrade_runcloud_php.py --server-id 123
@@ -65,6 +65,6 @@ This project uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH
 - **MINOR**: backward-compatible functionality.
 - **PATCH**: backward-compatible bug fixes.
 
-The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.2.0`.
+The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.3.0`.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
