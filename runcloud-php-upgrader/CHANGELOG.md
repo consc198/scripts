@@ -22,3 +22,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Configure the target PHP version with `--target-php`.
 - Keep PHP 8.0 and 8.1 as the default sources and PHP 8.2 as the default target.
 - Reject a target version that is also listed as a source version.
+
+## [1.1.1] - 2026-10-21
+
+### Changed
+- Replace Python's `requests` library with the system `curl` command for API requests.
+- Remove the Python package installation step; `curl` must be installed and available in `PATH`.
