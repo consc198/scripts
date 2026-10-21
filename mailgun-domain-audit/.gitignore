@@ -1,6 +1,10 @@
 # Local secrets
 apikey.txt
 
+# Local destructive-operation input
+# Keep the list of domains to delete out of version control
+domains_to_delete.txt
+
 # Generated audit reports
 mailgun_domain_audit.csv
 
