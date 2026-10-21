@@ -2,21 +2,27 @@
 """Upgrade RunCloud webapps from a selected PHP version to another.
 
 Place your RunCloud API token in token.txt beside this script.
-The token file is intentionally ignored by Git.
+The token file is intentionally ignored by Git. API calls are made with curl.
 """
 
 import argparse
+import json
+import shutil
+import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlencode
 
-import requests
-
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
 PER_PAGE = 40
 TOKEN_FILE = Path(__file__).with_name("token.txt")
+
+
+class APIError(RuntimeError):
+    """Raised when curl or the RunCloud API request fails."""
 
 
 def read_token():
@@ -31,19 +37,80 @@ def read_token():
     return token
 
 
-def get_all_pages(session, endpoint):
+def curl_request(method, url, token, params=None, json_body=None):
+    """Make an HTTP request with curl and return the decoded JSON response."""
+    if params:
+        url = f"{url}?{urlencode(params)}"
+
+    command = [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--write-out",
+        "\\n%{http_code}",
+        "--request",
+        method,
+        "--header",
+        f"Authorization: Bearer {token}",
+        "--header",
+        "Accept: application/json",
+        "--header",
+        "Content-Type: application/json",
+        "--connect-timeout",
+        "15",
+        "--max-time",
+        "30",
+        url,
+    ]
+    if json_body is not None:
+        command.extend(["--data-binary", json.dumps(json_body)])
+
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=False
+        )
+    except OSError as exc:
+        raise APIError(f"Could not run curl: {exc}") from exc
+
+    output = result.stdout
+    body, separator, status_text = output.rpartition("\n")
+    if not separator:
+        body, status_text = output, ""
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or body.strip() or "unknown curl error"
+        raise APIError(f"curl failed: {detail}")
+
+    try:
+        status = int(status_text.strip())
+    except ValueError as exc:
+        raise APIError("Could not determine HTTP status from curl response.") from exc
+
+    if not 200 <= status < 300:
+        detail = body.strip()
+        raise APIError(f"HTTP {status}: {detail or 'request failed'}")
+
+    if not body.strip():
+        return None
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as exc:
+        raise APIError("RunCloud API returned invalid JSON.") from exc
+
+
+def get_all_pages(token, endpoint):
     """Fetch all pages from a paginated RunCloud API endpoint."""
     results = []
     page = 1
 
     while True:
-        response = session.get(
+        payload = curl_request(
+            "GET",
             f"{BASE_URL}{endpoint}",
+            token,
             params={"page": page, "perPage": PER_PAGE},
-            timeout=30,
         )
-        response.raise_for_status()
-        payload = response.json()
 
         if isinstance(payload, list):
             return results + payload
@@ -74,9 +141,7 @@ def main():
         description="Upgrade RunCloud webapps from selected source PHP version(s) to a target version."
     )
     parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {VERSION}",
+        "--version", action="version", version=f"%(prog)s {VERSION}"
     )
     parser.add_argument(
         "--apply",
@@ -108,20 +173,19 @@ def main():
     if target_version in source_versions:
         parser.error("Target PHP version must differ from all source versions.")
 
-    session = requests.Session()
-    session.headers.update(
-        {
-            "Authorization": f"Bearer {read_token()}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-    )
+    if not shutil.which("curl"):
+        raise SystemExit("curl is required but was not found in PATH.")
+
+    token = read_token()
 
     try:
         if args.server_id:
-            servers = [{"id": int(args.server_id), "name": args.server_id}]
+            try:
+                servers = [{"id": int(args.server_id), "name": args.server_id}]
+            except ValueError:
+                parser.error("--server-id must be an integer.")
         else:
-            servers = get_all_pages(session, "/servers")
+            servers = get_all_pages(token, "/servers")
 
         if not servers:
             print("No servers found.")
@@ -140,8 +204,8 @@ def main():
             print(f"\nServer: {server_name} (ID {server_id})")
 
             try:
-                apps = get_all_pages(session, f"/servers/{server_id}/webapps")
-            except (requests.RequestException, ValueError) as exc:
+                apps = get_all_pages(token, f"/servers/{server_id}/webapps")
+            except (APIError, ValueError) as exc:
                 print(f"  [ERROR] Could not list webapps: {exc}")
                 failed += 1
                 continue
@@ -164,17 +228,16 @@ def main():
                     continue
 
                 try:
-                    response = session.patch(
-                        f"{BASE_URL}/servers/{server_id}/webapps/"
-                        f"{app_id}/settings/php",
-                        json={"phpVersion": target_version},
-                        timeout=30,
+                    curl_request(
+                        "PATCH",
+                        f"{BASE_URL}/servers/{server_id}/webapps/{app_id}/settings/php",
+                        token,
+                        json_body={"phpVersion": target_version},
                     )
-                    response.raise_for_status()
                     print("    [OK] Upgrade request accepted.")
                     upgraded += 1
                     time.sleep(0.25)
-                except requests.RequestException as exc:
+                except APIError as exc:
                     print(f"    [ERROR] Upgrade request failed: {exc}")
                     failed += 1
 
@@ -186,7 +249,7 @@ def main():
         else:
             print("No changes made. Use --apply to perform upgrades.")
 
-    except (requests.RequestException, ValueError) as exc:
+    except (APIError, ValueError) as exc:
         raise SystemExit(f"RunCloud API request failed: {exc}") from exc
 
 
