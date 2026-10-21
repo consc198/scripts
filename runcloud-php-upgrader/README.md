@@ -48,7 +48,24 @@ Apply changes by adding `--apply`:
 python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --apply
 ```
 
-### Update server PHP-CLI too\n\nPHP-CLI is a server-level setting, separate from each webapp's PHP version. Add `--update-php-cli` to also update a server's PHP-CLI version when its current version matches `--source-php`; it will be changed to `--target-php`. For example, to update both webapps and PHP-CLI from PHP 8.1 to PHP 8.2:\n\n```bash\npython3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --update-php-cli\npython3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --update-php-cli --apply\n```\n\nThe script checks the server's `phpCLIVersion` field and calls `PATCH /servers/{serverId}/php/cli` for matching servers. Since this setting applies to the whole server, it is evaluated once per server, not once per webapp.\n\n
+### Update server PHP-CLI too
+
+PHP-CLI is a server-level setting, separate from each webapp's PHP version. Add `--update-php-cli` to update a server's PHP-CLI version when its current version matches `--source-php`; it will be changed to `--target-php`.
+
+To preview updates to both webapp PHP and PHP-CLI from PHP 8.1 to PHP 8.2:
+
+```bash
+python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --update-php-cli
+```
+
+To apply both types of updates:
+
+```bash
+python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --update-php-cli --apply
+```
+
+PHP-CLI is checked once per server, using the server's `phpCLIVersion` field. Only servers whose PHP-CLI version matches the selected source version are targeted.
+
 To update **only PHP-CLI** and leave all webapp PHP versions untouched, use `--only-php-cli`:
 
 ```bash
