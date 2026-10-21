@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upgrade RunCloud webapps on PHP 8.0 or 8.1 to PHP 8.2.
+"""Upgrade RunCloud webapps from a selected PHP version to another.
 
 Place your RunCloud API token in token.txt beside this script.
 The token file is intentionally ignored by Git.
@@ -11,10 +11,10 @@ from pathlib import Path
 
 import requests
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 BASE_URL = "https://manage.runcloud.io/api/v3"
-TARGET_PHP = "php82rc"
-OLD_PHP_VERSIONS = {"php80rc", "php81rc"}
+DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
+DEFAULT_TARGET_PHP = "php82rc"
 PER_PAGE = 40
 TOKEN_FILE = Path(__file__).with_name("token.txt")
 
@@ -71,7 +71,7 @@ def get_all_pages(session, endpoint):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Upgrade RunCloud webapps using PHP 8.0 or 8.1 to PHP 8.2."
+        description="Upgrade RunCloud webapps from selected source PHP version(s) to a target version."
     )
     parser.add_argument(
         "--version",
@@ -84,10 +84,29 @@ def main():
         help="Apply changes. Without this flag, the script only previews them.",
     )
     parser.add_argument(
+        "--source-php",
+        nargs="+",
+        default=DEFAULT_SOURCE_PHP,
+        metavar="VERSION",
+        help="Source PHP version(s), e.g. php80rc php81rc (default: php80rc php81rc).",
+    )
+    parser.add_argument(
+        "--target-php",
+        default=DEFAULT_TARGET_PHP,
+        metavar="VERSION",
+        help="Target PHP version identifier, e.g. php82rc (default: php82rc).",
+    )
+    parser.add_argument(
         "--server-id",
         help="Only process a single server ID (default: all accessible servers).",
     )
     args = parser.parse_args()
+    source_versions = set(args.source_php)
+    target_version = args.target_php
+    if not source_versions:
+        parser.error("Specify at least one source PHP version.")
+    if target_version in source_versions:
+        parser.error("Target PHP version must differ from all source versions.")
 
     session = requests.Session()
     session.headers.update(
@@ -110,7 +129,8 @@ def main():
 
         print(f"Found {len(servers)} server(s).")
         print("Mode:", "LIVE CHANGES" if args.apply else "DRY RUN")
-        print(f"Target PHP version: {TARGET_PHP}")
+        print("Source PHP version(s): " + ", ".join(sorted(source_versions)))
+        print(f"Target PHP version: {target_version}")
 
         matched = upgraded = failed = 0
 
@@ -131,13 +151,13 @@ def main():
                 app_name = app.get("name", f"Webapp {app_id}")
                 current_php = app.get("phpVersion", "")
 
-                if current_php not in OLD_PHP_VERSIONS:
+                if current_php not in source_versions:
                     continue
 
                 matched += 1
                 print(
                     f"  {app_name} (ID {app_id}): "
-                    f"{current_php} -> {TARGET_PHP}"
+                    f"{current_php} -> {target_version}"
                 )
 
                 if not args.apply:
@@ -147,7 +167,7 @@ def main():
                     response = session.patch(
                         f"{BASE_URL}/servers/{server_id}/webapps/"
                         f"{app_id}/settings/php",
-                        json={"phpVersion": TARGET_PHP},
+                        json={"phpVersion": target_version},
                         timeout=30,
                     )
                     response.raise_for_status()
