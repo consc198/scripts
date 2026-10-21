@@ -1,6 +1,6 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.5.1**
+**Current version: 1.6.0**
 
 Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required. A terminal progress bar shows webapp scan progress. The optional `--update-php-cli` flag also updates the server-level PHP-CLI version using the same source and target version options.
 
@@ -47,6 +47,30 @@ Apply changes by adding `--apply`:
 ```bash
 python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --apply
 ```
+
+### Select specific webapps from a text file
+
+Create a text file such as `webapps.txt` with one exact webapp name per line. Blank lines and lines starting with `#` are ignored. Names are matched exactly and are case-sensitive.
+
+```text
+Production Site
+Customer Portal
+Staging App
+```
+
+Preview changes for only those listed webapps:
+
+```bash
+python3 upgrade_runcloud_php.py --webapps-file webapps.txt --source-php php81rc --target-php php82rc
+```
+
+Apply the changes after reviewing the preview:
+
+```bash
+python3 upgrade_runcloud_php.py --webapps-file webapps.txt --source-php php81rc --target-php php82rc --apply
+```
+
+The script reports listed names that were not found and listed webapps that do not use one of the selected source PHP versions. If the same exact webapp name exists on multiple servers, each matching webapp is eligible. The text-file filter selects webapps only; if you explicitly add `--update-php-cli`, server-level PHP-CLI updates are still handled separately. The file is read from the path you provide.
 
 ### Batch webapp PHP updates
 
@@ -106,6 +130,6 @@ This project uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH
 - **MINOR**: backward-compatible functionality.
 - **PATCH**: backward-compatible bug fixes.
 
-The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.5.1`.
+The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.6.0`.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
