@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.5.1"
+VERSION = "1.6.0"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -156,12 +156,18 @@ def main():
         help="Number of matching webapps to update per batch (default: 10).",
     )
     parser.add_argument(
+        "--webapps-file", type=Path, metavar="FILE",
+        help="Only process webapps whose exact names appear in this text file (one name per line).",
+    )
+    parser.add_argument(
         "--server-id",
         help="Only process a single server ID (default: all accessible servers).",
     )
     args = parser.parse_args()
     if args.only_php_cli:
         args.update_php_cli = True
+    if args.only_php_cli and args.webapps_file:
+        parser.error("--webapps-file cannot be used with --only-php-cli.")
     source_versions = set(args.source_php)
     target_version = args.target_php
     if not source_versions:
@@ -172,6 +178,22 @@ def main():
         parser.error("--batch-size must be at least 1.")
     if not shutil.which("curl"):
         raise SystemExit("curl is required but was not found in PATH.")
+
+    requested_webapp_names = None
+    if args.webapps_file:
+        if not args.webapps_file.is_file():
+            parser.error(f"Webapp list file not found: {args.webapps_file}")
+        try:
+            requested_webapp_names = {
+                line.strip()
+                for line in args.webapps_file.read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            }
+        except OSError as exc:
+            parser.error(f"Could not read webapp list file: {exc}")
+        if not requested_webapp_names:
+            parser.error(f"No webapp names found in {args.webapps_file}")
+        print(f"Loaded {len(requested_webapp_names)} webapp name(s) from {args.webapps_file}.")
 
     token = read_token()
 
@@ -246,6 +268,8 @@ def main():
             total_apps = sum(len(apps) for _, apps in server_apps if apps is not None)
             matches = []
             processed = 0
+            found_names = set()
+            source_mismatch_names = set()
             for server, apps in server_apps:
                 if apps is None:
                     failed += 1
@@ -253,11 +277,30 @@ def main():
                 for app in apps:
                     processed += 1
                     current_php = app.get("phpVersion", "")
+                    app_name = app.get("name", "")
+                    if requested_webapp_names is not None and app_name not in requested_webapp_names:
+                        show_progress(processed, total_apps, "Scanning webapps")
+                        continue
+                    if requested_webapp_names is not None:
+                        found_names.add(app_name)
                     if current_php in source_versions:
                         matches.append((server, app, current_php))
+                    elif requested_webapp_names is not None:
+                        source_mismatch_names.add(app_name)
                     show_progress(processed, total_apps, "Scanning webapps")
 
+            matched = len(matches)
             print(f"\nScanned {processed} webapp(s); {len(matches)} match(es) found.")
+            if requested_webapp_names is not None:
+                missing_names = requested_webapp_names - found_names
+                print(f"Names found in list: {len(found_names)}")
+                if source_mismatch_names:
+                    print("Listed webapps not using a selected source PHP version: " +
+                          ", ".join(sorted(source_mismatch_names)))
+                if missing_names:
+                    print("Listed webapp names not found: " + ", ".join(sorted(missing_names)))
+            if requested_webapp_names is not None:
+                print("Webapp selection: names from file (exact, case-sensitive matches)")
             print(f"Webapp update batch size: {args.batch_size}")
             batch_count = (len(matches) + args.batch_size - 1) // args.batch_size
 
