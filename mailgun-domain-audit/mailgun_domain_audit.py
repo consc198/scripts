@@ -590,6 +590,117 @@ def audit_domain(domain_obj):
     }
 
 
+def load_domains_to_delete(path):
+    """Read a domain deletion list; ignore blank lines and comments."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            entries = [
+                line.strip().lower().rstrip(".")
+                for line in handle
+                if line.strip() and not line.lstrip().startswith("#")
+            ]
+    except OSError as exc:
+        raise RuntimeError(f"Unable to read domain list {path}: {exc}") from exc
+
+    # Deduplicate while preserving the order in the text file.
+    unique = list(dict.fromkeys(entries))
+    if not unique:
+        raise RuntimeError(f"No domains found in deletion list {path}.")
+    return unique
+
+
+def delete_mailgun_domains(domains_to_delete, mailgun_domains):
+    """Preview and explicitly confirm deletion of listed domains that exist in Mailgun."""
+    available = {
+        str(item.get("name", "")).strip().lower().rstrip("."): item.get("name", "")
+        for item in mailgun_domains
+        if item.get("name")
+    }
+    targets = []
+    results = []
+
+    for requested in domains_to_delete:
+        actual_name = available.get(requested)
+        if actual_name:
+            targets.append(actual_name)
+        else:
+            results.append({
+                "domain": requested,
+                "status": "NOT_FOUND",
+                "http_status": "",
+                "message": "Domain was not found in the current Mailgun domain list; no delete request sent.",
+            })
+
+    print("\nMAILGUN DOMAIN DELETION PREVIEW")
+    for domain in targets:
+        print(f"  {domain}")
+    print(f"Listed: {len(domains_to_delete)} | Found in Mailgun: {len(targets)} | Not found: {len(domains_to_delete) - len(targets)}")
+
+    if not targets:
+        write_deletion_report(results)
+        return 0
+
+    expected = f"DELETE {len(targets)}"
+    print(f"\nThis permanently requests deletion of {len(targets)} Mailgun domain(s).")
+    print(f"To confirm, type exactly: {expected}")
+    confirmation = input("> ").strip()
+    if confirmation != expected:
+        print("Confirmation did not match; no domains were deleted.")
+        for domain in targets:
+            results.append({
+                "domain": domain,
+                "status": "CANCELLED",
+                "http_status": "",
+                "message": "User did not provide the required confirmation phrase.",
+            })
+        write_deletion_report(results)
+        return 1
+
+    for domain in targets:
+        # Do not automatically retry DELETE requests: if a connection drops after
+        # Mailgun processes the request, retrying could obscure the actual outcome.
+        url = f"{BASE_URL}/v4/domains/{quote(domain, safe='')}"
+        try:
+            response = SESSION.delete(url, timeout=30)
+            if 200 <= response.status_code < 300:
+                status = "DELETED"
+                message = "Mailgun accepted the deletion request."
+            else:
+                status = "FAILED"
+                message = response.text.strip()[:1000] or response.reason
+            results.append({
+                "domain": domain,
+                "status": status,
+                "http_status": response.status_code,
+                "message": message,
+            })
+            print(f"{domain}: {status} (HTTP {response.status_code})")
+        except requests.RequestException as exc:
+            results.append({
+                "domain": domain,
+                "status": "ERROR",
+                "http_status": "",
+                "message": str(exc),
+            })
+            print(f"{domain}: ERROR ({exc})", file=sys.stderr)
+
+    write_deletion_report(results)
+    return 0 if all(row["status"] in {"DELETED", "NOT_FOUND"} for row in results) else 1
+
+
+def write_deletion_report(results):
+    """Write the outcome of a domain deletion run to CSV."""
+    output_path = os.environ.get(
+        "MAILGUN_DELETION_CSV", "mailgun_domain_deletion_report.csv"
+    )
+    fields = ["domain", "status", "http_status", "message"]
+    with open(output_path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(results)
+    print(f"Deletion report written to: {output_path}")
+
+
 def read_version():
     """Read the project version from the VERSION file beside this script."""
     version_file = os.path.join(SCRIPT_DIR, "VERSION")
@@ -626,6 +737,11 @@ def main():
         action="store_true",
         help="compare Mailgun domains with domains configured in RunCloud (without DNS audit unless --dns-check is also supplied)",
     )
+    parser.add_argument(
+        "--delete-domains",
+        metavar="FILE",
+        help="delete only the Mailgun domains listed in FILE, after an explicit confirmation",
+    )
     args = parser.parse_args()
     # Preserve the historical default: with no check flags, run the DNS audit.
     # When --runcloud-check is used alone, skip per-domain DNS/DMARC requests.
@@ -644,6 +760,22 @@ def main():
         return 1
 
     print(f"Mailgun API base: {BASE_URL}", file=sys.stderr)
+    if args.delete_domains:
+        if args.dns_check or args.runcloud_check:
+            print("ERROR: --delete-domains must be used by itself, not with --dns-check or --runcloud-check.", file=sys.stderr)
+            return 2
+        try:
+            domains_to_delete = load_domains_to_delete(args.delete_domains)
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        try:
+            domains = get_all_domains()
+        except (requests.RequestException, ValueError, RuntimeError) as exc:
+            print(f"ERROR retrieving domains: {exc}", file=sys.stderr)
+            return 1
+        return delete_mailgun_domains(domains_to_delete, domains)
+
     try:
         domains = get_all_domains()
     except (requests.RequestException, ValueError, RuntimeError) as exc:
