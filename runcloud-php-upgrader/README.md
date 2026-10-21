@@ -1,6 +1,6 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.4.0**
+**Current version: 1.5.0**
 
 Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required. A terminal progress bar shows webapp scan progress. The optional `--update-php-cli` flag also updates the server-level PHP-CLI version using the same source and target version options.
 
@@ -48,6 +48,20 @@ Apply changes by adding `--apply`:
 python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --apply
 ```
 
+### Batch webapp PHP updates
+
+Matching webapps are processed in batches of 10 by default. After each batch, the script pauses for 2 seconds before continuing, to spread out API update requests. You can change the batch size with `--batch-size`:
+
+```bash
+# Default: batches of 10
+python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --apply
+
+# Custom batch size of 20
+python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --batch-size 20 --apply
+```
+
+The batch option applies to webapp PHP updates. PHP-CLI updates remain server-level operations.
+
 ### Update server PHP-CLI too
 
 PHP-CLI is a server-level setting, separate from each webapp's PHP version. Add `--update-php-cli` to update a server's PHP-CLI version when its current version matches `--source-php`; it will be changed to `--target-php`.
@@ -92,6 +106,6 @@ This project uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH
 - **MINOR**: backward-compatible functionality.
 - **PATCH**: backward-compatible bug fixes.
 
-The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.4.0`.
+The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.5.0`.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
