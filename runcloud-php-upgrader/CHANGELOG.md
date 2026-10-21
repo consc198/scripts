@@ -53,3 +53,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Process matching webapp PHP updates in batches of 10 by default.
 - Add `--batch-size` to customize the number of webapps per batch.
 - Pause 2 seconds between applied batches to spread out API requests.
+
+## [1.5.1] - 2026-10-21
+
+### Changed
+- Pause 10 minutes (600 seconds) instead of 2 seconds between applied webapp PHP update batches.
