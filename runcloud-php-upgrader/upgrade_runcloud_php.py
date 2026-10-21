@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -285,8 +285,8 @@ def main():
                             failed += 1
                         time.sleep(0.25)
                 if batch_index < batch_count and args.apply:
-                    print(f"Batch {batch_index}/{batch_count} complete; pausing 2 seconds before the next batch...")
-                    time.sleep(2)
+                    print(f"Batch {batch_index}/{batch_count} complete; pausing 10 minutes before the next batch...")
+                    time.sleep(600)
 
             if total_apps == 0:
                 print("No webapps to process.")
