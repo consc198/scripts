@@ -277,17 +277,6 @@ def main():
 
             if total_apps == 0:
                 print("No webapps to process.")
-
-            print("\n--- Summary ---")
-            print(f"Webapps scanned: {processed}")
-            print(f"Matching webapps: {matched}")
-            if args.apply:
-                print(f"Accepted webapp PHP update requests: {upgraded}")
-                print(f"Webapp/listing failures: {failed}")
-            else:
-                print("No webapp changes made. Use --apply to perform upgrades.")
-
-
         else:
             print("\nSkipping webapp PHP scan because --only-php-cli was specified.")
 
