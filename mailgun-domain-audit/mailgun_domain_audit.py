@@ -643,7 +643,10 @@ def delete_mailgun_domains(domains_to_delete, mailgun_domains):
     expected = f"DELETE {len(targets)}"
     print(f"\nThis permanently requests deletion of {len(targets)} Mailgun domain(s).")
     print(f"To confirm, type exactly: {expected}")
-    confirmation = input("> ").strip()
+    try:
+        confirmation = input("> ").strip()
+    except EOFError:
+        confirmation = ""
     if confirmation != expected:
         print("Confirmation did not match; no domains were deleted.")
         for domain in targets:
