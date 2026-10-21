@@ -662,7 +662,7 @@ def delete_mailgun_domains(domains_to_delete, mailgun_domains):
     for domain in targets:
         # Do not automatically retry DELETE requests: if a connection drops after
         # Mailgun processes the request, retrying could obscure the actual outcome.
-        url = f"{BASE_URL}/v4/domains/{quote(domain, safe='')}"
+        url = f"{BASE_URL}/v3/domains/{quote(domain, safe='')}"
         try:
             response = SESSION.delete(url, timeout=30)
             if 200 <= response.status_code < 300:
