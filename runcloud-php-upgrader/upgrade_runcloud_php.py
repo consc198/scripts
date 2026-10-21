@@ -11,6 +11,7 @@ from pathlib import Path
 
 import requests
 
+VERSION = "1.0.0"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 TARGET_PHP = "php82rc"
 OLD_PHP_VERSIONS = {"php80rc", "php81rc"}
@@ -71,6 +72,11 @@ def get_all_pages(session, endpoint):
 def main():
     parser = argparse.ArgumentParser(
         description="Upgrade RunCloud webapps using PHP 8.0 or 8.1 to PHP 8.2."
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {VERSION}",
     )
     parser.add_argument(
         "--apply",
