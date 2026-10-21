@@ -41,3 +41,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Add `--update-php-cli` to optionally update server-level PHP-CLI versions using the configured `--source-php` and `--target-php` values.
 - Use the RunCloud API v3 endpoint `PATCH /servers/{serverId}/php/cli` for PHP-CLI changes.
 - Report PHP-CLI matches, accepted updates, and failures separately from webapp PHP updates.
+
+## [1.4.0] - 2026-10-21
+
+### Added
+- Add `--only-php-cli` to update server PHP-CLI versions without listing or changing webapp PHP settings.
