@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.17] - 2026-10-21
+
+### Added
+- Add `--delete-domains FILE` to delete explicitly listed Mailgun domains after preview and exact typed confirmation, and write a per-domain CSV result report.
+- Skip deletion requests for names not found in the current Mailgun domain list; cancel safely if confirmation is missing or incorrect.
+
 ## [0.3.16] - 2026-10-20
 
 ### Added
