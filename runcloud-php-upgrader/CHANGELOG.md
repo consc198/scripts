@@ -58,3 +58,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Pause 10 minutes (600 seconds) instead of 2 seconds between applied webapp PHP update batches.
+
+## [1.6.0] - 2026-10-21
+
+### Added
+- Add `--webapps-file` to restrict webapp PHP updates to exact webapp names listed one per line in a text file.
+- Ignore blank lines and comment lines beginning with `#`.
+- Report listed webapp names that are not found and listed webapps that do not match the selected source PHP versions.
