@@ -46,3 +46,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Add `--only-php-cli` to update server PHP-CLI versions without listing or changing webapp PHP settings.
+
+## [1.5.0] - 2026-10-21
+
+### Added
+- Process matching webapp PHP updates in batches of 10 by default.
+- Add `--batch-size` to customize the number of webapps per batch.
+- Pause 2 seconds between applied batches to spread out API requests.
