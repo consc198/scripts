@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.17`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.18`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -90,7 +90,7 @@ python3 mailgun_domain_audit.py --delete-domains domains_to_delete.txt
 
 The script displays the domains it found and asks you to type the exact confirmation phrase `DELETE N`, where `N` is the number of listed domains found in Mailgun. If confirmation does not match—or standard input is unavailable—it cancels without sending delete requests. Names from the file that are not present in Mailgun are reported as `NOT_FOUND` and are not deleted.
 
-The result is written to `mailgun_domain_deletion_report.csv`. Override the path with `MAILGUN_DELETION_CSV`. The report records each domain's outcome and any HTTP status or error message. The script does not automatically retry DELETE requests, because the result can be uncertain if a network connection drops after Mailgun processes the request.
+The result is written to `mailgun_domain_deletion_report.csv`. Override the path with `MAILGUN_DELETION_CSV`. The report records each domain's outcome and any HTTP status or error message. The script uses Mailgun's documented `DELETE /v3/domains/{name}` endpoint and does not automatically retry DELETE requests, because the result can be uncertain if a network connection drops after Mailgun processes the request.
 
 ## Run
 
