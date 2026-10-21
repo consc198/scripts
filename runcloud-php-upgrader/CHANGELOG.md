@@ -28,3 +28,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Changed
 - Replace Python's `requests` library with the system `curl` command for API requests.
 - Remove the Python package installation step; `curl` must be installed and available in `PATH`.
+
+## [1.2.0] - 2026-10-21
+
+### Added
+- Show progress while scanning webapps, including a percentage and completed count.
+- Print status messages while fetching server and webapp lists.
