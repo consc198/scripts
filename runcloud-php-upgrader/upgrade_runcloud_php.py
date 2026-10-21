@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upgrade RunCloud webapps from a selected PHP version to another.
+"""Upgrade RunCloud webapp PHP and optionally server PHP-CLI versions.
 
 Place your RunCloud API token in token.txt beside this script.
 The token file is intentionally ignored by Git. API calls are made with curl.
@@ -9,12 +9,11 @@ import argparse
 import json
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -129,7 +128,7 @@ def show_progress(done, total, label="Processing"):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Upgrade RunCloud webapps from selected source PHP version(s) to a target version."
+        description="Upgrade RunCloud webapp PHP and optionally server PHP-CLI versions."
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     parser.add_argument(
@@ -138,11 +137,15 @@ def main():
     )
     parser.add_argument(
         "--source-php", nargs="+", default=DEFAULT_SOURCE_PHP, metavar="VERSION",
-        help="Source PHP version(s), e.g. php80rc php81rc (default: php80rc php81rc).",
+        help="Source PHP version(s) for webapps and, if enabled, PHP-CLI (default: php80rc php81rc).",
     )
     parser.add_argument(
         "--target-php", default=DEFAULT_TARGET_PHP, metavar="VERSION",
-        help="Target PHP version identifier, e.g. php82rc (default: php82rc).",
+        help="Target PHP version for webapps and, if enabled, PHP-CLI (default: php82rc).",
+    )
+    parser.add_argument(
+        "--update-php-cli", action="store_true",
+        help="Also update each server's PHP-CLI version when it matches --source-php, using --target-php.",
     )
     parser.add_argument(
         "--server-id",
@@ -178,6 +181,39 @@ def main():
         print("Mode:", "LIVE CHANGES" if args.apply else "DRY RUN")
         print("Source PHP version(s): " + ", ".join(sorted(source_versions)))
         print(f"Target PHP version: {target_version}")
+        if args.update_php_cli:
+            print("PHP-CLI updates: enabled (server-level)")
+
+        matched = upgraded = failed = 0
+        cli_matched = cli_upgraded = cli_failed = 0
+
+        # CLI version is server-level, so evaluate it once per server.
+        if args.update_php_cli:
+            print("\nChecking server PHP-CLI versions...")
+            for server in servers:
+                server_id = server["id"]
+                server_name = server.get("name", str(server_id))
+                current_cli = server.get("phpCLIVersion", "")
+                if current_cli not in source_versions:
+                    print(f"  {server_name}: PHP-CLI {current_cli or 'unknown'} — no match")
+                    continue
+
+                cli_matched += 1
+                print(f"  {server_name} (ID {server_id}): PHP-CLI {current_cli} -> {target_version}")
+                if args.apply:
+                    try:
+                        curl_request(
+                            "PATCH",
+                            f"{BASE_URL}/servers/{server_id}/php/cli",
+                            token,
+                            json_body={"phpVersion": target_version},
+                        )
+                        print("    [OK] PHP-CLI update request accepted.")
+                        cli_upgraded += 1
+                        time.sleep(0.25)
+                    except APIError as exc:
+                        print(f"    [ERROR] PHP-CLI update request failed: {exc}")
+                        cli_failed += 1
 
         # Fetch webapps first so the progress bar has a reliable total.
         server_apps = []
@@ -194,7 +230,7 @@ def main():
 
         total_apps = sum(len(apps) for _, apps in server_apps if apps is not None)
         print(f"Processing {total_apps} webapp(s)...")
-        matched = upgraded = failed = processed = 0
+        processed = 0
 
         for server, apps in server_apps:
             server_id = server["id"]
@@ -212,10 +248,7 @@ def main():
 
                 if current_php in source_versions:
                     matched += 1
-                    print(
-                        f"\n  {app_name} (ID {app_id}): "
-                        f"{current_php} -> {target_version}"
-                    )
+                    print(f"\n  {app_name} (ID {app_id}): {current_php} -> {target_version}")
                     if args.apply:
                         try:
                             curl_request(
@@ -224,11 +257,11 @@ def main():
                                 token,
                                 json_body={"phpVersion": target_version},
                             )
-                            print("    [OK] Upgrade request accepted.")
+                            print("    [OK] Webapp PHP update request accepted.")
                             upgraded += 1
                             time.sleep(0.25)
                         except APIError as exc:
-                            print(f"    [ERROR] Upgrade request failed: {exc}")
+                            print(f"    [ERROR] Webapp PHP update request failed: {exc}")
                             failed += 1
 
                 show_progress(processed, total_apps, "Webapps")
@@ -240,10 +273,18 @@ def main():
         print(f"Webapps scanned: {processed}")
         print(f"Matching webapps: {matched}")
         if args.apply:
-            print(f"Accepted upgrade requests: {upgraded}")
-            print(f"Failures: {failed}")
+            print(f"Accepted webapp PHP update requests: {upgraded}")
+            print(f"Webapp/listing failures: {failed}")
         else:
-            print("No changes made. Use --apply to perform upgrades.")
+            print("No webapp changes made. Use --apply to perform upgrades.")
+
+        if args.update_php_cli:
+            print(f"Matching server PHP-CLI versions: {cli_matched}")
+            if args.apply:
+                print(f"Accepted PHP-CLI update requests: {cli_upgraded}")
+                print(f"PHP-CLI failures: {cli_failed}")
+            else:
+                print("No PHP-CLI changes made. Use --apply to perform upgrades.")
 
     except (APIError, ValueError) as exc:
         raise SystemExit(f"RunCloud API request failed: {exc}") from exc
