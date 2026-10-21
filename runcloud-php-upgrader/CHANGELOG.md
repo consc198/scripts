@@ -34,3 +34,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Added
 - Show progress while scanning webapps, including a percentage and completed count.
 - Print status messages while fetching server and webapp lists.
+
+## [1.3.0] - 2026-10-21
+
+### Added
+- Add `--update-php-cli` to optionally update server-level PHP-CLI versions using the configured `--source-php` and `--target-php` values.
+- Use the RunCloud API v3 endpoint `PATCH /servers/{serverId}/php/cli` for PHP-CLI changes.
+- Report PHP-CLI matches, accepted updates, and failures separately from webapp PHP updates.
