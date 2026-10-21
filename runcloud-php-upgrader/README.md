@@ -1,8 +1,8 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.0.0**
+**Current version: 1.1.0**
 
-Finds RunCloud web applications using PHP 8.0 or PHP 8.1 and upgrades them to PHP 8.2.
+Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version.
 
 ## Requirements
 
@@ -27,16 +27,30 @@ Show the installed script version:
 python3 upgrade_runcloud_php.py --version
 ```
 
-Preview matching webapps first (no changes are made):
+### Preview (dry run)
+
+By default, the script previews webapps on PHP 8.0 or 8.1 that would be changed to PHP 8.2:
 
 ```bash
 python3 upgrade_runcloud_php.py
 ```
 
-Apply upgrades:
+Specify one source version and one target version:
 
 ```bash
-python3 upgrade_runcloud_php.py --apply
+python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc
+```
+
+Specify multiple source versions:
+
+```bash
+python3 upgrade_runcloud_php.py --source-php php80rc php81rc --target-php php82rc
+```
+
+Apply changes by adding `--apply`:
+
+```bash
+python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --apply
 ```
 
 Limit the run to one server:
@@ -46,7 +60,7 @@ python3 upgrade_runcloud_php.py --server-id 123
 python3 upgrade_runcloud_php.py --server-id 123 --apply
 ```
 
-The script only targets webapps whose API response has `phpVersion` equal to `php80rc` or `php81rc`. It targets `php82rc`. Back up production sites and check application compatibility before applying changes.
+Use the PHP version identifiers accepted by RunCloud's API (for example, `php81rc`, `php82rc`). Confirm that the requested target version is available on the server. Back up production sites and check application compatibility before applying changes.
 
 ## Versioning
 
@@ -56,6 +70,6 @@ This project uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH
 - **MINOR**: backward-compatible functionality.
 - **PATCH**: backward-compatible bug fixes.
 
-The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.0.0`.
+The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.1.0`.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
