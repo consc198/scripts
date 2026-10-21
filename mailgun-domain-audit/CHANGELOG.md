@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.18] - 2026-10-21
+
+### Fixed
+- Use Mailgun's documented `DELETE /v3/domains/{name}` endpoint for domain deletion; the previous `/v4/domains/{name}` path returned HTTP 404.
+
 ## [0.3.17] - 2026-10-21
 
 ### Added
