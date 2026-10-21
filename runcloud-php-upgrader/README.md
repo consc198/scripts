@@ -1,6 +1,6 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.5.0**
+**Current version: 1.5.1**
 
 Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required. A terminal progress bar shows webapp scan progress. The optional `--update-php-cli` flag also updates the server-level PHP-CLI version using the same source and target version options.
 
@@ -50,7 +50,7 @@ python3 upgrade_runcloud_php.py --source-php php81rc --target-php php82rc --appl
 
 ### Batch webapp PHP updates
 
-Matching webapps are processed in batches of 10 by default. After each batch, the script pauses for 2 seconds before continuing, to spread out API update requests. You can change the batch size with `--batch-size`:
+Matching webapps are processed in batches of 10 by default. After each batch, the script pauses for 10 minutes before continuing, to spread out API update requests. You can change the batch size with `--batch-size`:
 
 ```bash
 # Default: batches of 10
@@ -106,6 +106,6 @@ This project uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH
 - **MINOR**: backward-compatible functionality.
 - **PATCH**: backward-compatible bug fixes.
 
-The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.5.0`.
+The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.5.1`.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
