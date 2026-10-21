@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -148,10 +148,16 @@ def main():
         help="Also update each server's PHP-CLI version when it matches --source-php, using --target-php.",
     )
     parser.add_argument(
+        "--only-php-cli", action="store_true",
+        help="Update only server PHP-CLI versions; do not inspect or change webapp PHP versions.",
+    )
+    parser.add_argument(
         "--server-id",
         help="Only process a single server ID (default: all accessible servers).",
     )
     args = parser.parse_args()
+    if args.only_php_cli:
+        args.update_php_cli = True
     source_versions = set(args.source_php)
     target_version = args.target_php
     if not source_versions:
@@ -183,6 +189,8 @@ def main():
         print(f"Target PHP version: {target_version}")
         if args.update_php_cli:
             print("PHP-CLI updates: enabled (server-level)")
+        if args.only_php_cli:
+            print("Mode: PHP-CLI only; webapp PHP will not be changed.")
 
         matched = upgraded = failed = 0
         cli_matched = cli_upgraded = cli_failed = 0
@@ -215,68 +223,83 @@ def main():
                         print(f"    [ERROR] PHP-CLI update request failed: {exc}")
                         cli_failed += 1
 
-        # Fetch webapps first so the progress bar has a reliable total.
-        server_apps = []
-        for index, server in enumerate(servers, 1):
-            server_id = server["id"]
-            server_name = server.get("name", str(server_id))
-            print(f"Fetching webapps for server {index}/{len(servers)}: {server_name}...", flush=True)
-            try:
-                apps = get_all_pages(token, f"/servers/{server_id}/webapps")
-                server_apps.append((server, apps))
-            except (APIError, ValueError) as exc:
-                print(f"  [ERROR] Could not list webapps: {exc}")
-                server_apps.append((server, None))
+        if not args.only_php_cli:
+            # Fetch webapps first so the progress bar has a reliable total.
+            server_apps = []
+            for index, server in enumerate(servers, 1):
+                server_id = server["id"]
+                server_name = server.get("name", str(server_id))
+                print(f"Fetching webapps for server {index}/{len(servers)}: {server_name}...", flush=True)
+                try:
+                    apps = get_all_pages(token, f"/servers/{server_id}/webapps")
+                    server_apps.append((server, apps))
+                except (APIError, ValueError) as exc:
+                    print(f"  [ERROR] Could not list webapps: {exc}")
+                    server_apps.append((server, None))
 
-        total_apps = sum(len(apps) for _, apps in server_apps if apps is not None)
-        print(f"Processing {total_apps} webapp(s)...")
-        processed = 0
+            total_apps = sum(len(apps) for _, apps in server_apps if apps is not None)
+            print(f"Processing {total_apps} webapp(s)...")
+            processed = 0
 
-        for server, apps in server_apps:
-            server_id = server["id"]
-            server_name = server.get("name", str(server_id))
-            if apps is None:
-                failed += 1
-                continue
+            for server, apps in server_apps:
+                server_id = server["id"]
+                server_name = server.get("name", str(server_id))
+                if apps is None:
+                    failed += 1
+                    continue
 
-            print(f"\nServer: {server_name} (ID {server_id})")
-            for app in apps:
-                app_id = app.get("id")
-                app_name = app.get("name", f"Webapp {app_id}")
-                current_php = app.get("phpVersion", "")
-                processed += 1
+                print(f"\nServer: {server_name} (ID {server_id})")
+                for app in apps:
+                    app_id = app.get("id")
+                    app_name = app.get("name", f"Webapp {app_id}")
+                    current_php = app.get("phpVersion", "")
+                    processed += 1
 
-                if current_php in source_versions:
-                    matched += 1
-                    print(f"\n  {app_name} (ID {app_id}): {current_php} -> {target_version}")
-                    if args.apply:
-                        try:
-                            curl_request(
-                                "PATCH",
-                                f"{BASE_URL}/servers/{server_id}/webapps/{app_id}/settings/php",
-                                token,
-                                json_body={"phpVersion": target_version},
-                            )
-                            print("    [OK] Webapp PHP update request accepted.")
-                            upgraded += 1
-                            time.sleep(0.25)
-                        except APIError as exc:
-                            print(f"    [ERROR] Webapp PHP update request failed: {exc}")
-                            failed += 1
+                    if current_php in source_versions:
+                        matched += 1
+                        print(f"\n  {app_name} (ID {app_id}): {current_php} -> {target_version}")
+                        if args.apply:
+                            try:
+                                curl_request(
+                                    "PATCH",
+                                    f"{BASE_URL}/servers/{server_id}/webapps/{app_id}/settings/php",
+                                    token,
+                                    json_body={"phpVersion": target_version},
+                                )
+                                print("    [OK] Webapp PHP update request accepted.")
+                                upgraded += 1
+                                time.sleep(0.25)
+                            except APIError as exc:
+                                print(f"    [ERROR] Webapp PHP update request failed: {exc}")
+                                failed += 1
 
-                show_progress(processed, total_apps, "Webapps")
+                    show_progress(processed, total_apps, "Webapps")
 
-        if total_apps == 0:
-            print("No webapps to process.")
+            if total_apps == 0:
+                print("No webapps to process.")
+
+            print("\n--- Summary ---")
+            print(f"Webapps scanned: {processed}")
+            print(f"Matching webapps: {matched}")
+            if args.apply:
+                print(f"Accepted webapp PHP update requests: {upgraded}")
+                print(f"Webapp/listing failures: {failed}")
+            else:
+                print("No webapp changes made. Use --apply to perform upgrades.")
+
+
+        else:
+            print("\nSkipping webapp PHP scan because --only-php-cli was specified.")
 
         print("\n--- Summary ---")
-        print(f"Webapps scanned: {processed}")
-        print(f"Matching webapps: {matched}")
-        if args.apply:
-            print(f"Accepted webapp PHP update requests: {upgraded}")
-            print(f"Webapp/listing failures: {failed}")
-        else:
-            print("No webapp changes made. Use --apply to perform upgrades.")
+        if not args.only_php_cli:
+            print(f"Webapps scanned: {processed}")
+            print(f"Matching webapps: {matched}")
+            if args.apply:
+                print(f"Accepted webapp PHP update requests: {upgraded}")
+                print(f"Webapp/listing failures: {failed}")
+            else:
+                print("No webapp changes made. Use --apply to perform upgrades.")
 
         if args.update_php_cli:
             print(f"Matching server PHP-CLI versions: {cli_matched}")
