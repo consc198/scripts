@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -152,6 +152,10 @@ def main():
         help="Update only server PHP-CLI versions; do not inspect or change webapp PHP versions.",
     )
     parser.add_argument(
+        "--batch-size", type=int, default=10, metavar="N",
+        help="Number of matching webapps to update per batch (default: 10).",
+    )
+    parser.add_argument(
         "--server-id",
         help="Only process a single server ID (default: all accessible servers).",
     )
@@ -164,6 +168,8 @@ def main():
         parser.error("Specify at least one source PHP version.")
     if target_version in source_versions:
         parser.error("Target PHP version must differ from all source versions.")
+    if args.batch_size < 1:
+        parser.error("--batch-size must be at least 1.")
     if not shutil.which("curl"):
         raise SystemExit("curl is required but was not found in PATH.")
 
@@ -224,7 +230,7 @@ def main():
                         cli_failed += 1
 
         if not args.only_php_cli:
-            # Fetch webapps first so the progress bar has a reliable total.
+            # Fetch webapps first so progress totals are known before processing.
             server_apps = []
             for index, server in enumerate(servers, 1):
                 server_id = server["id"]
@@ -238,42 +244,49 @@ def main():
                     server_apps.append((server, None))
 
             total_apps = sum(len(apps) for _, apps in server_apps if apps is not None)
-            print(f"Processing {total_apps} webapp(s)...")
+            matches = []
             processed = 0
-
             for server, apps in server_apps:
-                server_id = server["id"]
-                server_name = server.get("name", str(server_id))
                 if apps is None:
                     failed += 1
                     continue
-
-                print(f"\nServer: {server_name} (ID {server_id})")
                 for app in apps:
+                    processed += 1
+                    current_php = app.get("phpVersion", "")
+                    if current_php in source_versions:
+                        matches.append((server, app, current_php))
+                    show_progress(processed, total_apps, "Scanning webapps")
+
+            print(f"\nScanned {processed} webapp(s); {len(matches)} match(es) found.")
+            print(f"Webapp update batch size: {args.batch_size}")
+            batch_count = (len(matches) + args.batch_size - 1) // args.batch_size
+
+            for batch_index, offset in enumerate(range(0, len(matches), args.batch_size), 1):
+                batch = matches[offset:offset + args.batch_size]
+                print(f"\nBatch {batch_index}/{batch_count} ({len(batch)} webapp(s))")
+                for server, app, current_php in batch:
+                    server_id = server["id"]
+                    server_name = server.get("name", str(server_id))
                     app_id = app.get("id")
                     app_name = app.get("name", f"Webapp {app_id}")
-                    current_php = app.get("phpVersion", "")
-                    processed += 1
-
-                    if current_php in source_versions:
-                        matched += 1
-                        print(f"\n  {app_name} (ID {app_id}): {current_php} -> {target_version}")
-                        if args.apply:
-                            try:
-                                curl_request(
-                                    "PATCH",
-                                    f"{BASE_URL}/servers/{server_id}/webapps/{app_id}/settings/php",
-                                    token,
-                                    json_body={"phpVersion": target_version},
-                                )
-                                print("    [OK] Webapp PHP update request accepted.")
-                                upgraded += 1
-                                time.sleep(0.25)
-                            except APIError as exc:
-                                print(f"    [ERROR] Webapp PHP update request failed: {exc}")
-                                failed += 1
-
-                    show_progress(processed, total_apps, "Webapps")
+                    print(f"  {server_name} / {app_name} (ID {app_id}): {current_php} -> {target_version}")
+                    if args.apply:
+                        try:
+                            curl_request(
+                                "PATCH",
+                                f"{BASE_URL}/servers/{server_id}/webapps/{app_id}/settings/php",
+                                token,
+                                json_body={"phpVersion": target_version},
+                            )
+                            print("    [OK] Webapp PHP update request accepted.")
+                            upgraded += 1
+                        except APIError as exc:
+                            print(f"    [ERROR] Webapp PHP update request failed: {exc}")
+                            failed += 1
+                        time.sleep(0.25)
+                if batch_index < batch_count and args.apply:
+                    print(f"Batch {batch_index}/{batch_count} complete; pausing 2 seconds before the next batch...")
+                    time.sleep(2)
 
             if total_apps == 0:
                 print("No webapps to process.")
