@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.16`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.17`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -70,6 +70,28 @@ For normalization, a leading `mg.` or `mgn.` is removed from Mailgun domain name
 
 **Security:** `apikey.txt` and `runcloud_apikey.txt` contain secrets. Keep them local, do not commit them, and restrict their filesystem permissions where supported (for example, `chmod 600 apikey.txt runcloud_apikey.txt` on macOS/Linux). The repository includes `.gitignore` rules for these filenames.
 
+### Delete selected Mailgun domains (destructive)
+
+**Use with care:** deleting a Mailgun domain can interrupt sending and remove domain configuration. This operation is separate from the audit and RunCloud comparison. It only targets exact domain names listed in the supplied text file and confirmed to exist in the current Mailgun domain list.
+
+Create a text file such as `domains_to_delete.txt` with one domain per line. Blank lines and lines beginning with `#` are ignored:
+
+```text
+# Domains approved for removal
+old-example.com
+mg.unused-example.net
+```
+
+Run the deletion mode by itself:
+
+```bash
+python3 mailgun_domain_audit.py --delete-domains domains_to_delete.txt
+```
+
+The script displays the domains it found and asks you to type the exact confirmation phrase `DELETE N`, where `N` is the number of listed domains found in Mailgun. If confirmation does not match—or standard input is unavailable—it cancels without sending delete requests. Names from the file that are not present in Mailgun are reported as `NOT_FOUND` and are not deleted.
+
+The result is written to `mailgun_domain_deletion_report.csv`. Override the path with `MAILGUN_DELETION_CSV`. The report records each domain's outcome and any HTTP status or error message. The script does not automatically retry DELETE requests, because the result can be uncertain if a network connection drops after Mailgun processes the request.
+
 ## Run
 
 Show the script version (this does not require an API key):
@@ -110,7 +132,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Project files
 
-- `mailgun_domain_audit.py` — audit script.
+- `mailgun_domain_audit.py` — audit and explicitly confirmed domain-deletion script.
 - `apikey.txt` — local Mailgun secret; do not commit.
 - `runcloud_apikey.txt` — optional local RunCloud API token; do not commit.
 - `README.md` — setup, usage, and limitations.
