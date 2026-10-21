@@ -1,23 +1,18 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.1.0**
+**Current version: 1.1.1**
 
-Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version.
+Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required.
 
 ## Requirements
 
 - Python 3.9+
+- `curl` installed and available in `PATH`
 - A RunCloud API token with permission to read servers/webapps and change webapp PHP settings.
 
 ## Setup
 
-1. Install the dependency:
-
-   ```bash
-   python3 -m pip install requests
-   ```
-
-2. Create `token.txt` in this directory and put your RunCloud API token in it. Keep this file private; it is excluded by `.gitignore`.
+1. Create `token.txt` in this directory and put your RunCloud API token in it. Keep this file private; it is excluded by `.gitignore`.
 
 ## Usage
 
@@ -70,6 +65,6 @@ This project uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH
 - **MINOR**: backward-compatible functionality.
 - **PATCH**: backward-compatible bug fixes.
 
-The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.1.0`.
+The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.1.1`.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
