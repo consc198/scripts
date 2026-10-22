@@ -2,6 +2,13 @@
 
 All notable changes to RunCloud APT Updater are documented here.
 
+## [1.3.2] - 2026-10-22
+
+### Added
+- Append failures only to `failures.log`, including API inventory errors, missing server hosts, and failed update runs.
+- Include a local timestamp for each logged failure; successful operations are not logged.
+
+
 ## [1.3.1] - 2026-10-22
 
 ### Fixed
