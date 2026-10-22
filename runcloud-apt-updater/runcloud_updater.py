@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 API_BASE = "https://manage.runcloud.io"
 DEFAULT_ENDPOINT = "/api/v3/servers"
 
@@ -184,6 +184,8 @@ def main() -> int:
                         help="refresh APT indexes and simulate upgrades; do not install upgrades")
     parser.add_argument("--apply", action="store_true",
                         help="refresh APT indexes and install available upgrades")
+    parser.add_argument("--packages-only", action="store_true",
+                        help="limit --check/--apply to nano, ubuntu-advantage-tools, ubuntu-pro-client, and ubuntu-pro-client-l10n")
     parser.add_argument("--api-url", default=os.getenv("RUNCLOUD_API_URL", API_BASE + DEFAULT_ENDPOINT),
                         help="server-list endpoint (default: RunCloud v3 servers endpoint)")
     parser.add_argument("--timeout", type=int, default=1800, help="per-server command timeout in seconds")
@@ -194,6 +196,8 @@ def main() -> int:
 
     if args.apply and args.check:
         parser.error("--apply and --check are mutually exclusive")
+    if args.packages_only and not (args.check or args.apply):
+        parser.error("--packages-only requires either --check or --apply")
     if not args.list and not args.server and not args.all:
         parser.error("choose --list, --server ID, or --all")
     if args.server and args.all:
@@ -241,19 +245,29 @@ def main() -> int:
         print("Inventory only. Use --check to simulate upgrades or --apply to install them.")
         return 0
 
-    remote_command = (
-        "set -eu; "
-        "apt-get update; "
-        + ("apt-get -s upgrade" if args.check
-           else "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y")
+    targeted_packages = (
+        "nano ubuntu-advantage-tools ubuntu-pro-client ubuntu-pro-client-l10n"
     )
+    if args.packages_only:
+        package_action = (
+            f"apt-get -s install --only-upgrade {targeted_packages}" if args.check
+            else f"DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade {targeted_packages}"
+        )
+        operation = "targeted package simulation" if args.check else "targeted package update"
+    else:
+        package_action = (
+            "apt-get -s upgrade" if args.check
+            else "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
+        )
+        operation = "simulation" if args.check else "upgrade"
+    remote_command = f"set -eu; apt-get update; {package_action}"
     def update_server(server: dict[str, Any]) -> tuple[str, bool]:
         name = get_server_name(server)
         host = get_server_host(server)
         if not host:
             print(f"[{name}] ERROR: no SSH host/IP found in API object; skipping.", file=sys.stderr, flush=True)
             return name, False
-        print(f"[{name}] starting {'simulation' if args.check else 'upgrade'}", flush=True)
+        print(f"[{name}] starting {operation}", flush=True)
         rc = ssh_run(host, remote_command, args.timeout, args.connect_timeout)
         if rc == 0:
             print(f"[{name}] SUCCESS", flush=True)
