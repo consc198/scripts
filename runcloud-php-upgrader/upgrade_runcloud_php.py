@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -115,6 +115,42 @@ def get_all_pages(token, endpoint):
     return results
 
 
+
+def classify_webapp(app):
+    """Best-effort app type label using fields returned by the RunCloud API."""
+    explicit_fields = (
+        "webappType", "applicationType", "appType", "type",
+        "framework", "stack", "deploymentType",
+    )
+    explicit_values = []
+    for key in explicit_fields:
+        value = app.get(key)
+        if isinstance(value, str) and value.strip():
+            explicit_values.append(value.strip())
+
+    text_values = list(explicit_values)
+    for key in ("name", "rootPath", "path", "appPath", "documentRoot", "publicPath"):
+        value = app.get(key)
+        if isinstance(value, str) and value.strip():
+            text_values.append(value.strip())
+
+    combined = " ".join(text_values).lower()
+    if "wordpress" in combined or "wp-content" in combined or "wp-includes" in combined:
+        return "WordPress"
+    if "laravel" in combined or "/artisan" in combined or "artisan" in combined:
+        return "Laravel"
+
+    for value in explicit_values:
+        normalized = value.lower().replace("_", " ").replace("-", " ")
+        if "custom" in normalized:
+            return "Custom"
+        if "wordpress" in normalized:
+            return "WordPress"
+        if "laravel" in normalized:
+            return "Laravel"
+
+    return explicit_values[0] if explicit_values else "Unknown"
+
 def show_progress(done, total, label="Processing"):
     """Render a compact terminal progress bar."""
     width = 30
@@ -160,6 +196,10 @@ def main():
         help="Only process webapps whose exact names appear in this text file (one name per line).",
     )
     parser.add_argument(
+        "--list-apps-php", metavar="VERSION",
+        help="List webapps running this PHP version and show their detected app type; makes no changes.",
+    )
+    parser.add_argument(
         "--server-id",
         help="Only process a single server ID (default: all accessible servers).",
     )
@@ -168,6 +208,8 @@ def main():
         args.update_php_cli = True
     if args.only_php_cli and args.webapps_file:
         parser.error("--webapps-file cannot be used with --only-php-cli.")
+    if args.list_apps_php and (args.apply or args.update_php_cli or args.only_php_cli or args.webapps_file):
+        parser.error("--list-apps-php is a read-only inventory mode and cannot be combined with update options or --webapps-file.")
     source_versions = set(args.source_php)
     target_version = args.target_php
     if not source_versions:
@@ -212,6 +254,43 @@ def main():
             return
 
         print(f"Found {len(servers)} server(s).")
+
+        if args.list_apps_php:
+            print(f"\nListing webapps running {args.list_apps_php} (read-only)...")
+            rows = []
+            for index, server in enumerate(servers, 1):
+                server_id = server["id"]
+                server_name = server.get("name", str(server_id))
+                print(f"Fetching webapps for server {index}/{len(servers)}: {server_name}...", flush=True)
+                try:
+                    apps = get_all_pages(token, f"/servers/{server_id}/webapps")
+                except (APIError, ValueError) as exc:
+                    print(f"  [ERROR] Could not list webapps: {exc}")
+                    continue
+                for app in apps:
+                    if app.get("phpVersion", "") == args.list_apps_php:
+                        rows.append((
+                            server_name,
+                            str(server_id),
+                            str(app.get("name", "(unnamed)")),
+                            classify_webapp(app),
+                            str(app.get("id", "")),
+                        ))
+
+            if rows:
+                headers = ("SERVER", "SERVER ID", "WEBAPP NAME", "APP TYPE", "WEBAPP ID")
+                widths = [max(len(headers[i]), *(len(row[i]) for row in rows)) for i in range(len(headers))]
+                print()
+                print("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
+                print("  ".join("-" * widths[i] for i in range(len(headers))))
+                for row in rows:
+                    print("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
+                print(f"\nFound {len(rows)} webapp(s) using {args.list_apps_php}.")
+            else:
+                print(f"No webapps found using {args.list_apps_php}.")
+            print("App type is inferred from available API metadata and paths; 'Unknown' means the API response did not provide enough clues.")
+            return
+
         print("Mode:", "LIVE CHANGES" if args.apply else "DRY RUN")
         print("Source PHP version(s): " + ", ".join(sorted(source_versions)))
         print(f"Target PHP version: {target_version}")
