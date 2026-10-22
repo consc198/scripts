@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -114,6 +114,37 @@ def get_all_pages(token, endpoint):
         page += 1
     return results
 
+
+
+
+def get_webapp_url(app):
+    """Return a URL/domain exposed in the webapp API data, if available."""
+    for key in ("url", "URL", "domain", "primaryDomain", "webappUrl", "siteUrl"):
+        value = app.get(key)
+        if isinstance(value, str) and value.strip():
+            value = value.strip()
+            if key.lower() == "domain" or "://" not in value:
+                return "https://" + value
+            return value
+
+    for key in ("domains", "websites", "hosts"):
+        values = app.get(key)
+        if isinstance(values, list) and values:
+            first = values[0]
+            if isinstance(first, str) and first.strip():
+                value = first.strip()
+                return value if "://" in value else "https://" + value
+            if isinstance(first, dict):
+                for nested_key in ("url", "domain", "name", "host"):
+                    value = first.get(nested_key)
+                    if isinstance(value, str) and value.strip():
+                        value = value.strip()
+                        return value if "://" in value else "https://" + value
+        elif isinstance(values, str) and values.strip():
+            value = values.strip()
+            return value if "://" in value else "https://" + value
+
+    return "Not provided"
 
 
 def classify_webapp(app):
@@ -274,11 +305,12 @@ def main():
                             str(server_id),
                             str(app.get("name", "(unnamed)")),
                             classify_webapp(app),
+                            get_webapp_url(app),
                             str(app.get("id", "")),
                         ))
 
             if rows:
-                headers = ("SERVER", "SERVER ID", "WEBAPP NAME", "APP TYPE", "WEBAPP ID")
+                headers = ("SERVER", "SERVER ID", "WEBAPP NAME", "APP TYPE", "URL", "WEBAPP ID")
                 widths = [max(len(headers[i]), *(len(row[i]) for row in rows)) for i in range(len(headers))]
                 print()
                 print("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
