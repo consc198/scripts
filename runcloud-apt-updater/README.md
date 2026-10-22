@@ -1,6 +1,6 @@
 # RunCloud APT Updater
 
-**Current version:** `1.3.0` — see [`CHANGELOG.md`](CHANGELOG.md) for release history.
+**Current version:** `1.3.1` — see [`CHANGELOG.md`](CHANGELOG.md) for release history.
 
 Discover RunCloud servers using curl, then optionally connect over SSH as root to update Debian/Ubuntu packages. The script uses Python's standard library only; it does not use the requests library.
 
@@ -29,7 +29,7 @@ python3 runcloud_updater.py --all --apply --packages-only --workers 5
 
 `--packages-only` restricts package operations to `nano`, `ubuntu-advantage-tools`, `ubuntu-pro-client`, and `ubuntu-pro-client-l10n`; it must be combined with `--check` or `--apply`. It uses APT `--only-upgrade`, so it will not install any of those packages if they are absent. Without this flag, the regular full-system behavior is unchanged. `--workers N` sets the maximum number of servers processed concurrently (default `5`; allowed range `1`–`100`). Start conservatively, for example with `--workers 5`, to avoid overwhelming servers or network capacity. `--list` only lists servers. `--check` refreshes APT indexes and simulates upgrades without installing them. `--apply` installs available upgrades. Servers are processed sequentially. SSH strict host-key checking is enabled, so confirm `known_hosts` is populated before running.
 
-The script requests up to 40 servers per API page and follows RunCloud pagination until all pages are fetched. It reports page-fetch progress. The script expects the API response to contain a list of servers and common ID/name/IP fields. Confirm `--list` output against your RunCloud account before applying upgrades. Test on one non-production server before using `--all --apply`.
+The script retries transient API failures (including HTTP 429 rate limits) up to five times per request, with a delay and a retry time limit. It requests up to 40 servers per API page and follows RunCloud pagination until all pages are fetched. It reports page-fetch progress. The script expects the API response to contain a list of servers and common ID/name/IP fields. Confirm `--list` output against your RunCloud account before applying upgrades. Test on one non-production server before using `--all --apply`.
 
 The script does not reboot servers automatically. Review upgrade output and plan any required reboots separately.
 
