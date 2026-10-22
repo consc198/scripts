@@ -101,17 +101,14 @@ def validate_target(value: str) -> str:
     return value
 
 
-def ssh_run(host: str, user: str, key_file: str | None, remote_command: str,
-            timeout: int, connect_timeout: int) -> int:
-    destination = validate_target(f"{user}@{host}")
+def ssh_run(host: str, remote_command: str, timeout: int, connect_timeout: int) -> int:
+    destination = validate_target(f"root@{host}")
     command = [
         "ssh", "-o", "BatchMode=yes",
         "-o", "StrictHostKeyChecking=yes",
         "-o", f"ConnectTimeout={connect_timeout}",
     ]
-    if key_file:
-        command.extend(["-i", os.path.expanduser(key_file)])
-    command.extend(["--", destination, f"sudo -n sh -lc {shlex.quote(remote_command)}"])
+    command.extend(["--", destination, f"sh -lc {shlex.quote(remote_command)}"])
     print(f"  SSH: {destination}", flush=True)
     try:
         result = subprocess.run(command, timeout=timeout, check=False)
@@ -132,10 +129,6 @@ def main() -> int:
                         help="refresh APT indexes and install available upgrades")
     parser.add_argument("--api-url", default=os.getenv("RUNCLOUD_API_URL", API_BASE + DEFAULT_ENDPOINT),
                         help="server-list endpoint (default: RunCloud v3 servers endpoint)")
-    parser.add_argument("--ssh-user", default=os.getenv("RUNCLOUD_SSH_USER"),
-                        help="SSH username (or set RUNCLOUD_SSH_USER)")
-    parser.add_argument("--ssh-key", default=os.getenv("RUNCLOUD_SSH_KEY"),
-                        help="SSH private-key path (or set RUNCLOUD_SSH_KEY)")
     parser.add_argument("--timeout", type=int, default=1800, help="per-server command timeout in seconds")
     parser.add_argument("--connect-timeout", type=int, default=10, help="SSH connection timeout in seconds")
     args = parser.parse_args()
@@ -155,12 +148,6 @@ def main() -> int:
         return 2
     if not token:
         print(f"ERROR: {token_path} is empty.", file=sys.stderr)
-        return 2
-    if not args.list and not args.ssh_user:
-        print("ERROR: set RUNCLOUD_SSH_USER or pass --ssh-user.", file=sys.stderr)
-        return 2
-    if args.ssh_key and not os.path.isfile(os.path.expanduser(args.ssh_key)):
-        print(f"ERROR: SSH key not found: {args.ssh_key}", file=sys.stderr)
         return 2
 
     try:
@@ -197,7 +184,7 @@ def main() -> int:
     remote_command = (
         "set -eu; "
         "apt-get update; "
-        + ("sudo -n apt-get -s upgrade" if args.check
+        + ("apt-get -s upgrade" if args.check
            else "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y")
     )
     failures = 0
@@ -209,8 +196,7 @@ def main() -> int:
             failures += 1
             continue
         print(f"[{name}] starting {'simulation' if args.check else 'upgrade'}", flush=True)
-        rc = ssh_run(host, args.ssh_user, args.ssh_key, remote_command,
-                     args.timeout, args.connect_timeout)
+        rc = ssh_run(host, remote_command, args.timeout, args.connect_timeout)
         if rc == 0:
             print(f"[{name}] SUCCESS", flush=True)
         else:
