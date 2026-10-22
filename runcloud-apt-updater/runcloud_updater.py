@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 API_BASE = "https://manage.runcloud.io"
 DEFAULT_ENDPOINT = "/api/v3/servers"
 
@@ -31,6 +31,7 @@ def curl_json(url: str, token: str, timeout: int) -> Any:
     command = [
         "curl", "--fail", "--silent", "--show-error",
         "--connect-timeout", "10", "--max-time", str(timeout),
+        "--retry", "5", "--retry-delay", "2", "--retry-max-time", "180",
         "--header", f"Authorization: Bearer {token}",
         "--header", "Accept: application/json",
         url,
