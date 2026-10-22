@@ -398,7 +398,7 @@ def main():
                 server_name = server.get("name", str(server_id))
                 print(f"Fetching webapps for server {index}/{len(servers)}: {server_name}...", flush=True)
                 try:
-                    apps = get_all_pages(token, f"/servers/{server_id}/webapps")
+                    apps = get_webapps_with_retry(token, server_id, server_name)
                     server_apps.append((server, apps))
                 except (APIError, ValueError) as exc:
                     print(f"  [ERROR] Could not list webapps: {exc}")
