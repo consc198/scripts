@@ -21,6 +21,8 @@ from typing import Any
 import subprocess
 from urllib.parse import urlencode, urlparse
 
+__version__ = "1.0.0"
+
 RUNcloud_BASE = "https://manage.runcloud.io/api/v3"
 STATUSCAKE_BASE = "https://api.statuscake.com/v1"
 
@@ -241,6 +243,7 @@ def webapp_domains(token: str, server_id: Any, app: dict[str, Any]) -> set[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Find RunCloud web apps without a matching StatusCake uptime monitor.")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--runcloud-token-file", default="token.txt", help="RunCloud API v3 bearer token file (default: token.txt)")
     parser.add_argument("--statuscake-token-file", default="statuscaketoken.txt", help="StatusCake API token file (default: statuscaketoken.txt)")
     parser.add_argument("--output", default="webapps_missing_statuscake.txt", help="Output text file (default: webapps_missing_statuscake.txt)")
