@@ -1,0 +1,6 @@
+# Credentials and local audit output
+token.txt
+statuscaketoken.txt
+webapps_missing_statuscake.txt
+__pycache__/
+*.py[cod]
