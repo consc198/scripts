@@ -15,6 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 VERSION = "1.0.0"
 API_BASE = "https://manage.runcloud.io"
@@ -69,6 +70,59 @@ def server_items(payload: Any) -> list[dict[str, Any]]:
     else:
         raise UpdaterError("Unexpected RunCloud API response type.")
     return [item for item in items if isinstance(item, dict)]
+
+
+def paginated_url(url: str, page: int, per_page: int = 40) -> str:
+    """Return a URL with RunCloud's page and perPage query parameters set."""
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["page"] = str(page)
+    query["perPage"] = str(per_page)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def fetch_all_servers(url: str, token: str, timeout: int = 60) -> list[dict[str, Any]]:
+    """Fetch every server page; RunCloud defaults to only 15 records per page."""
+    per_page = 40
+    all_servers: list[dict[str, Any]] = []
+    page = 1
+    total_pages: int | None = None
+
+    while True:
+        payload = curl_json(paginated_url(url, page, per_page), token, timeout)
+        page_servers = server_items(payload)
+        all_servers.extend(page_servers)
+
+        pagination = None
+        if isinstance(payload, dict):
+            meta = payload.get("meta")
+            if isinstance(meta, dict) and isinstance(meta.get("pagination"), dict):
+                pagination = meta["pagination"]
+
+        if pagination is not None:
+            try:
+                total_pages = int(pagination.get("total_pages", pagination.get("totalPages", 1)))
+            except (TypeError, ValueError):
+                total_pages = None
+
+        print(f"Fetched server page {page}" + (f"/{total_pages}" if total_pages else ""), flush=True)
+
+        if total_pages is not None:
+            if page >= total_pages:
+                break
+        elif len(page_servers) < per_page:
+            break
+
+        page += 1
+        if page > 1000:
+            raise UpdaterError("Stopped pagination after 1000 pages; refusing to continue indefinitely.")
+
+    # Avoid duplicate server records if the API repeats an item across pages.
+    unique: dict[str, dict[str, Any]] = {}
+    for index, server in enumerate(all_servers):
+        sid = get_server_id(server)
+        unique[sid if sid else f"__row_{index}"] = server
+    return list(unique.values())
 
 
 def get_server_host(server: dict[str, Any]) -> str | None:
@@ -153,8 +207,7 @@ def main() -> int:
         return 2
 
     try:
-        payload = curl_json(args.api_url, token, timeout=60)
-        servers = server_items(payload)
+        servers = fetch_all_servers(args.api_url, token, timeout=60)
     except UpdaterError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
