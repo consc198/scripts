@@ -65,3 +65,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Add `--webapps-file` to restrict webapp PHP updates to exact webapp names listed one per line in a text file.
 - Ignore blank lines and comment lines beginning with `#`.
 - Report listed webapp names that are not found and listed webapps that do not match the selected source PHP versions.
+
+## [1.7.0] - 2026-10-22
+
+### Added
+- Add read-only `--list-apps-php VERSION` inventory mode, showing matching webapps, server/webapp IDs, and a best-effort app type classification.
+- Allow the inventory to be limited with `--server-id`.
