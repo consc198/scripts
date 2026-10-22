@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+VERSION = "1.0.0"
 API_BASE = "https://manage.runcloud.io"
 DEFAULT_ENDPOINT = "/api/v3/servers"
 
@@ -120,6 +121,7 @@ def ssh_run(host: str, remote_command: str, timeout: int, connect_timeout: int) 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     parser.add_argument("--list", action="store_true", help="list servers only; do not SSH")
     parser.add_argument("--server", help="target a single RunCloud server ID")
     parser.add_argument("--all", action="store_true", help="target all servers returned by the API")
