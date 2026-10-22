@@ -2,6 +2,14 @@
 
 All notable changes to RunCloud APT Updater are documented here.
 
+## [1.1.0] - 2026-10-22
+
+### Fixed
+- Fetch all RunCloud server pages instead of stopping at the default first page (typically 15 servers).
+- Request up to 40 servers per page and report page-fetch progress.
+- Deduplicate servers by ID across returned pages.
+
+
 This project follows [Semantic Versioning](https://semver.org/): MAJOR for incompatible changes, MINOR for backward-compatible functionality, and PATCH for backward-compatible fixes.
 
 ## [1.0.0] - 2026-10-22
