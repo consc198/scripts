@@ -72,7 +72,7 @@ def request_json(url: str, headers: dict[str, str], *, retries: int = 3) -> dict
                 continue
             raise ApiError(f"Network error calling {url}: {message}")
 
-        body, separator, status_text = result.stdout.rpartition("\\n")
+        body, separator, status_text = result.stdout.rpartition("\n")
         if not separator:
             raise ApiError(f"Could not read HTTP status from curl response for {url}")
         try:
