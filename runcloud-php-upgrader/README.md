@@ -1,6 +1,6 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.7.1**
+**Current version: 1.7.2**
 
 Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required. A terminal progress bar shows webapp scan progress. The optional `--update-php-cli` flag also updates the server-level PHP-CLI version using the same source and target version options.
 
@@ -62,7 +62,7 @@ Optionally limit the inventory to one server:
 python3 upgrade_runcloud_php.py --list-apps-php php81rc --server-id 123
 ```
 
-This mode makes no changes and cannot be combined with update flags. App type is inferred from the metadata and paths returned by the API; if those fields don't identify WordPress, Laravel, or another type, it reports `Unknown`.
+This mode makes no changes and cannot be combined with update flags. Temporary webapp-listing failures (HTTP 429 and common 5xx errors) are retried up to five attempts with increasing waits. App type is inferred from the metadata and paths returned by the API; if those fields don't identify WordPress, Laravel, or another type, it reports `Unknown`.
 
 ### Select specific webapps from a text file
 
@@ -146,6 +146,6 @@ This project uses [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH
 - **MINOR**: backward-compatible functionality.
 - **PATCH**: backward-compatible bug fixes.
 
-The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.7.1`.
+The canonical version is recorded in `VERSION` and should match the script's `VERSION` constant. Each release should have a matching Git tag such as `v1.7.2`.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
