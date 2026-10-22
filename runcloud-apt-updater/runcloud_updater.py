@@ -110,7 +110,7 @@ def ssh_run(host: str, user: str, key_file: str | None, remote_command: str,
     ]
     if key_file:
         command.extend(["-i", os.path.expanduser(key_file)])
-    command.extend(["--", destination, "sudo", "-n", "sh", "-lc", remote_command])
+    command.extend(["--", destination, f"sudo -n sh -lc {shlex.quote(remote_command)}"])
     print(f"  SSH: {destination}", flush=True)
     try:
         result = subprocess.run(command, timeout=timeout, check=False)
@@ -190,9 +190,9 @@ def main() -> int:
 
     remote_command = (
         "set -eu; "
-        "sudo -n apt-get update; "
+        "apt-get update; "
         + ("sudo -n apt-get -s upgrade" if args.check
-           else "sudo -n DEBIAN_FRONTEND=noninteractive apt-get upgrade -y")
+           else "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y")
     )
     failures = 0
     for server in selected:
