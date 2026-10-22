@@ -2,6 +2,12 @@
 
 All notable changes to RunCloud APT Updater are documented here.
 
+## [1.3.1] - 2026-10-22
+
+### Fixed
+- Retry transient RunCloud API HTTP failures, including rate limiting (429), up to five times with a delay and an overall retry time limit.
+
+
 ## [1.3.0] - 2026-10-22
 
 ### Added
