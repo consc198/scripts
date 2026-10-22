@@ -5,11 +5,12 @@ A read-only Python script that checks every RunCloud web app against StatusCake 
 ## Requirements
 
 - Python 3.10 or newer
+- `curl` installed and available on your `PATH`
 - A RunCloud API v3 bearer token with permission to list servers, web apps, and domains
 - A StatusCake API token with permission to list uptime checks
 - Network access to both APIs
 
-No third-party Python packages are required.
+No third-party Python packages are required. All API HTTP requests are made with the system `curl` command; the script does not use Python `requests` or Python's built-in HTTP clients.
 
 ## Configure tokens
 
