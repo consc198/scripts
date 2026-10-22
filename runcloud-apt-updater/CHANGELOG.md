@@ -2,6 +2,14 @@
 
 All notable changes to RunCloud APT Updater are documented here.
 
+## [1.2.0] - 2026-10-22
+
+### Added
+- Run package checks and upgrades concurrently across multiple servers.
+- Add `--workers` to configure concurrency (default 5, allowed range 1–100).
+- Report a final succeeded/failed count across all worker tasks.
+
+
 ## [1.1.0] - 2026-10-22
 
 ### Fixed
