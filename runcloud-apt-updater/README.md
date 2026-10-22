@@ -1,6 +1,6 @@
 # RunCloud APT Updater
 
-**Current version:** `1.0.0` — see [`CHANGELOG.md`](CHANGELOG.md) for release history.
+**Current version:** `1.1.0` — see [`CHANGELOG.md`](CHANGELOG.md) for release history.
 
 Discover RunCloud servers using curl, then optionally connect over SSH as root to update Debian/Ubuntu packages. The script uses Python's standard library only; it does not use the requests library.
 
@@ -26,7 +26,7 @@ python3 runcloud_updater.py --all --apply
 
 `--list` only lists servers. `--check` refreshes APT indexes and simulates upgrades without installing them. `--apply` installs available upgrades. Servers are processed sequentially. SSH strict host-key checking is enabled, so confirm `known_hosts` is populated before running.
 
-The script expects the API response to contain a list of servers and common ID/name/IP fields. Confirm `--list` output against your RunCloud account before applying upgrades. Test on one non-production server before using `--all --apply`.
+The script requests up to 40 servers per API page and follows RunCloud pagination until all pages are fetched. It reports page-fetch progress. The script expects the API response to contain a list of servers and common ID/name/IP fields. Confirm `--list` output against your RunCloud account before applying upgrades. Test on one non-production server before using `--all --apply`.
 
 The script does not reboot servers automatically. Review upgrade output and plan any required reboots separately.
 
