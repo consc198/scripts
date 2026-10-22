@@ -231,7 +231,9 @@ def main() -> int:
     try:
         servers = fetch_all_servers(args.api_url, token, timeout=60)
     except UpdaterError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        message = f"ERROR: {exc}"
+        print(message, file=sys.stderr)
+        log_failure(message)
         return 1
 
     if not servers:
