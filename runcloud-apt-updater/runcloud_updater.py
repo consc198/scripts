@@ -18,9 +18,21 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 API_BASE = "https://manage.runcloud.io"
 DEFAULT_ENDPOINT = "/api/v3/servers"
+FAILURE_LOG = Path(__file__).resolve().with_name("failures.log")
+
+
+def log_failure(message: str) -> None:
+    """Append only failure messages to a dedicated log file."""
+    try:
+        with FAILURE_LOG.open("a", encoding="utf-8") as log_file:
+            from datetime import datetime, timezone
+            timestamp = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+            log_file.write(f"{timestamp} {message}\n")
+    except OSError as exc:
+        print(f"ERROR: could not write failure log {FAILURE_LOG}: {exc}", file=sys.stderr, flush=True)
 
 
 class UpdaterError(RuntimeError):
@@ -266,14 +278,18 @@ def main() -> int:
         name = get_server_name(server)
         host = get_server_host(server)
         if not host:
-            print(f"[{name}] ERROR: no SSH host/IP found in API object; skipping.", file=sys.stderr, flush=True)
+            message = f"[{name}] ERROR: no SSH host/IP found in API object; skipping."
+            print(message, file=sys.stderr, flush=True)
+            log_failure(message)
             return name, False
         print(f"[{name}] starting {operation}", flush=True)
         rc = ssh_run(host, remote_command, args.timeout, args.connect_timeout)
         if rc == 0:
             print(f"[{name}] SUCCESS", flush=True)
             return name, True
-        print(f"[{name}] FAILED (exit {rc})", file=sys.stderr, flush=True)
+        message = f"[{name}] FAILED (exit {rc})"
+        print(message, file=sys.stderr, flush=True)
+        log_failure(message)
         return name, False
 
     print(f"Processing {len(selected)} servers with up to {min(args.workers, len(selected))} concurrent workers.",
@@ -286,7 +302,9 @@ def main() -> int:
             try:
                 _, success = future.result()
             except Exception as exc:
-                print(f"ERROR: unexpected worker failure: {exc}", file=sys.stderr, flush=True)
+                message = f"ERROR: unexpected worker failure: {exc}"
+                print(message, file=sys.stderr, flush=True)
+                log_failure(message)
                 success = False
             if success:
                 succeeded += 1
