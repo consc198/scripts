@@ -71,3 +71,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Added
 - Add read-only `--list-apps-php VERSION` inventory mode, showing matching webapps, server/webapp IDs, and a best-effort app type classification.
 - Allow the inventory to be limited with `--server-id`.
+
+## [1.7.1] - 2026-10-22
+
+### Added
+- Include the webapp URL/domain in the read-only PHP-version inventory when the API response provides it.
