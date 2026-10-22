@@ -13,6 +13,7 @@ import re
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 API_BASE = "https://manage.runcloud.io"
@@ -146,9 +147,14 @@ def main() -> int:
     if args.server and args.all:
         parser.error("--server and --all are mutually exclusive")
 
-    token = os.getenv("RUNCLOUD_API_TOKEN")
+    token_path = Path(__file__).resolve().with_name("token.txt")
+    try:
+        token = token_path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        print(f"ERROR: could not read {token_path}: {exc}", file=sys.stderr)
+        return 2
     if not token:
-        print("ERROR: set RUNCLOUD_API_TOKEN in the environment.", file=sys.stderr)
+        print(f"ERROR: {token_path} is empty.", file=sys.stderr)
         return 2
     if not args.list and not args.ssh_user:
         print("ERROR: set RUNCLOUD_SSH_USER or pass --ssh-user.", file=sys.stderr)
