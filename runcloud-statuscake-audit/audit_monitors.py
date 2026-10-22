@@ -18,9 +18,8 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
+import subprocess
 from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
 
 RUNcloud_BASE = "https://manage.runcloud.io/api/v3"
 STATUSCAKE_BASE = "https://api.statuscake.com/v1"
@@ -41,28 +40,60 @@ def read_token(path: Path, label: str) -> str:
 
 
 def request_json(url: str, headers: dict[str, str], *, retries: int = 3) -> dict[str, Any]:
+    """Call an API with the system curl executable (no Python HTTP client)."""
+    command = ["curl", "--silent", "--show-error", "--location", "--max-time", "30",
+               "--write-out", "\\n%{http_code}"]
+    for key, value in headers.items():
+        command.extend(["--header", f"{key}: {value}"])
+    command.append(url)
+
     for attempt in range(retries):
-        req = Request(url, headers=headers, method="GET")
         try:
-            with urlopen(req, timeout=30) as response:
-                raw = response.read().decode("utf-8")
-                payload = json.loads(raw) if raw else {}
-                if not isinstance(payload, dict):
-                    raise ApiError(f"Expected a JSON object from {url}")
-                return payload
-        except HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")[:500]
-            if exc.code == 429 and attempt < retries - 1:
-                time.sleep(2 ** attempt)
-                continue
-            raise ApiError(f"API request failed ({exc.code}) for {url}: {body}") from exc
-        except URLError as exc:
+            result = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=35,
+            )
+        except FileNotFoundError as exc:
+            raise ApiError("curl was not found. Install curl and ensure it is available on PATH.") from exc
+        except subprocess.TimeoutExpired as exc:
             if attempt < retries - 1:
                 time.sleep(2 ** attempt)
                 continue
-            raise ApiError(f"Network error calling {url}: {exc}") from exc
+            raise ApiError(f"curl timed out while calling {url}") from exc
+
+        if result.returncode != 0:
+            message = result.stderr.strip() or f"curl exited with status {result.returncode}"
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            raise ApiError(f"Network error calling {url}: {message}")
+
+        body, separator, status_text = result.stdout.rpartition("\\n")
+        if not separator:
+            raise ApiError(f"Could not read HTTP status from curl response for {url}")
+        try:
+            status = int(status_text.strip())
+        except ValueError as exc:
+            raise ApiError(f"Invalid HTTP status from curl for {url}") from exc
+
+        if status == 429 and attempt < retries - 1:
+            time.sleep(2 ** attempt)
+            continue
+        if status < 200 or status >= 300:
+            raise ApiError(f"API request failed ({status}) for {url}: {body[:500]}")
+
+        try:
+            payload = json.loads(body) if body.strip() else {}
         except json.JSONDecodeError as exc:
             raise ApiError(f"Invalid JSON returned by {url}") from exc
+        if not isinstance(payload, dict):
+            raise ApiError(f"Expected a JSON object from {url}")
+        return payload
+
     raise ApiError(f"Request failed after retries: {url}")
 
 
