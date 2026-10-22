@@ -2,6 +2,14 @@
 
 All notable changes to RunCloud APT Updater are documented here.
 
+## [1.3.0] - 2026-10-22
+
+### Added
+- Add `--packages-only` mode to check or upgrade only `nano`, `ubuntu-advantage-tools`, `ubuntu-pro-client`, and `ubuntu-pro-client-l10n`.
+- Use APT `--only-upgrade` so the targeted mode does not install these packages if they are absent.
+- Keep the existing full-system update behavior unchanged when `--packages-only` is not supplied.
+
+
 ## [1.2.0] - 2026-10-22
 
 ### Added
