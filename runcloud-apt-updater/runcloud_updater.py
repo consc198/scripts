@@ -7,6 +7,7 @@ The script never executes package upgrades unless --apply is supplied.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import re
@@ -17,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 API_BASE = "https://manage.runcloud.io"
 DEFAULT_ENDPOINT = "/api/v3/servers"
 
@@ -187,6 +188,8 @@ def main() -> int:
                         help="server-list endpoint (default: RunCloud v3 servers endpoint)")
     parser.add_argument("--timeout", type=int, default=1800, help="per-server command timeout in seconds")
     parser.add_argument("--connect-timeout", type=int, default=10, help="SSH connection timeout in seconds")
+    parser.add_argument("--workers", type=int, default=5,
+                        help="maximum servers to update concurrently (default: 5)")
     args = parser.parse_args()
 
     if args.apply and args.check:
@@ -195,6 +198,8 @@ def main() -> int:
         parser.error("choose --list, --server ID, or --all")
     if args.server and args.all:
         parser.error("--server and --all are mutually exclusive")
+    if args.workers < 1 or args.workers > 100:
+        parser.error("--workers must be between 1 and 100")
 
     token_path = Path(__file__).resolve().with_name("token.txt")
     try:
@@ -242,22 +247,38 @@ def main() -> int:
         + ("apt-get -s upgrade" if args.check
            else "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y")
     )
-    failures = 0
-    for server in selected:
+    def update_server(server: dict[str, Any]) -> tuple[str, bool]:
         name = get_server_name(server)
         host = get_server_host(server)
         if not host:
-            print(f"[{name}] ERROR: no SSH host/IP found in API object; skipping.", file=sys.stderr)
-            failures += 1
-            continue
+            print(f"[{name}] ERROR: no SSH host/IP found in API object; skipping.", file=sys.stderr, flush=True)
+            return name, False
         print(f"[{name}] starting {'simulation' if args.check else 'upgrade'}", flush=True)
         rc = ssh_run(host, remote_command, args.timeout, args.connect_timeout)
         if rc == 0:
             print(f"[{name}] SUCCESS", flush=True)
-        else:
-            print(f"[{name}] FAILED (exit {rc})", file=sys.stderr, flush=True)
-            failures += 1
-    print(f"Finished: {len(selected) - failures} succeeded, {failures} failed.")
+            return name, True
+        print(f"[{name}] FAILED (exit {rc})", file=sys.stderr, flush=True)
+        return name, False
+
+    print(f"Processing {len(selected)} servers with up to {min(args.workers, len(selected))} concurrent workers.",
+          flush=True)
+    succeeded = 0
+    failures = 0
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = [executor.submit(update_server, server) for server in selected]
+        for future in as_completed(futures):
+            try:
+                _, success = future.result()
+            except Exception as exc:
+                print(f"ERROR: unexpected worker failure: {exc}", file=sys.stderr, flush=True)
+                success = False
+            if success:
+                succeeded += 1
+            else:
+                failures += 1
+
+    print(f"Finished: {succeeded} succeeded, {failures} failed.")
     return 1 if failures else 0
 
 
