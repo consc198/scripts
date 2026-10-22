@@ -76,3 +76,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Include the webapp URL/domain in the read-only PHP-version inventory when the API response provides it.
+
+## [1.7.2] - 2026-10-22
+
+### Changed
+- Retry webapp listing requests after HTTP 429 and common 5xx errors, with exponential waits up to five total attempts.
+- Truncate long HTTP error bodies so Cloudflare challenge pages do not flood terminal output.
