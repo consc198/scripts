@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 API_BASE = "https://manage.runcloud.io"
 DEFAULT_ENDPOINT = "/api/v3/servers"
 
