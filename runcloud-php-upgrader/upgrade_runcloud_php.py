@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.7.1"
+VERSION = "1.7.2"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -75,7 +75,10 @@ def curl_request(method, url, token, params=None, json_body=None):
         raise APIError("Could not determine HTTP status from curl response.") from exc
 
     if not 200 <= status < 300:
-        raise APIError(f"HTTP {status}: {body.strip() or 'request failed'}")
+        detail = body.strip() or "request failed"
+        if len(detail) > 500:
+            detail = detail[:500] + "... [response truncated]"
+        raise APIError(f"HTTP {status}: {detail}")
 
     if not body.strip():
         return None
@@ -115,6 +118,31 @@ def get_all_pages(token, endpoint):
     return results
 
 
+
+
+
+def get_webapps_with_retry(token, server_id, server_name, max_attempts=5):
+    """Retry transient webapp-list failures, including rate limits and server errors."""
+    endpoint = f"/servers/{server_id}/webapps"
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return get_all_pages(token, endpoint)
+        except APIError as exc:
+            message = str(exc)
+            retryable = any(
+                code in message
+                for code in ("HTTP 429:", "HTTP 500:", "HTTP 502:", "HTTP 503:", "HTTP 504:")
+            )
+            if not retryable or attempt >= max_attempts:
+                raise
+            delay = 15 * (2 ** (attempt - 1))
+            print(
+                f"  [RETRY] Could not list webapps for {server_name} "
+                f"(attempt {attempt}/{max_attempts}): {message.splitlines()[0]} "
+                f"Retrying in {delay} seconds...",
+                flush=True,
+            )
+            time.sleep(delay)
 
 
 def get_webapp_url(app):
@@ -294,7 +322,7 @@ def main():
                 server_name = server.get("name", str(server_id))
                 print(f"Fetching webapps for server {index}/{len(servers)}: {server_name}...", flush=True)
                 try:
-                    apps = get_all_pages(token, f"/servers/{server_id}/webapps")
+                    apps = get_webapps_with_retry(token, server_id, server_name)
                 except (APIError, ValueError) as exc:
                     print(f"  [ERROR] Could not list webapps: {exc}")
                     continue
