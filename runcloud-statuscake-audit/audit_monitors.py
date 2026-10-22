@@ -127,7 +127,11 @@ def fetch_statuscake_monitors(token: str) -> list[dict[str, Any]]:
         items = get_data(payload)
         all_items.extend(items)
         pages = pagination_pages(payload)
-        if page >= pages or not items:
+        # Some API responses omit total_pages; keep requesting pages while a
+        # full page is returned, so accounts with many checks are not truncated.
+        if not items or (page >= pages and len(items) < 100):
+            break
+        if page >= pages and len(items) < 100:
             break
         page += 1
     return all_items
@@ -146,6 +150,8 @@ def normalize_hostname(value: Any) -> str | None:
     if not host:
         return None
     host = host.rstrip(".").lower()
+    if host.startswith("*."):
+        host = host[2:]
     if host.startswith("www."):
         host = host[4:]
     return host or None
