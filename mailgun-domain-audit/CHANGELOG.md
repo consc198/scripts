@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.20] - 2026-10-23
+
+### Fixed
+- Force Cloudflare zone-list API requests to use IPv4 via `curl --ipv4`, avoiding IPv6 connectivity issues.
+
 ## [0.3.19] - 2026-10-23
 
 ### Added
