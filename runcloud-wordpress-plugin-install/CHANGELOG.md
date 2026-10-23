@@ -4,6 +4,17 @@ Notable changes to the RunCloud WordPress Plugin Installer are documented here.
 
 This project uses [Semantic Versioning](https://semver.org/). Release tags use the format `vMAJOR.MINOR.PATCH`.
 
+## [1.2.0] - 2026-10-23
+
+### Added
+- Add `--purge-runcache` to run `wp runcache purge` on selected WordPress apps.
+- Support dry-run preview and a dedicated `runcloud-cache-purge.json` report.
+- Add `--purge-output` to customize the cache purge report path.
+
+### Notes
+- Cache purge runs as the WordPress web app's RunCloud Linux user.
+- Live RunCloud and WordPress server testing has not been performed as part of this change.
+
 ## [1.1.0] - 2026-10-20
 
 ### Added
