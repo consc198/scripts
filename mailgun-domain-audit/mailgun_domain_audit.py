@@ -30,6 +30,8 @@ import requests
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 API_KEY_FILE = os.path.join(SCRIPT_DIR, "apikey.txt")
 RUNCLOUD_API_KEY_FILE = os.path.join(SCRIPT_DIR, "runcloud_apikey.txt")
+CLOUDFLARE_API_KEY_FILE = os.path.join(SCRIPT_DIR, "cloudflare_apikey.txt")
+CLOUDFLARE_BASE_URL = "https://api.cloudflare.com/client/v4"
 RUNCLOUD_BASE_URL = "https://manage.runcloud.io/api/v3"
 
 
@@ -255,6 +257,87 @@ def load_runcloud_api_key():
         return None
     return key
 
+
+
+def load_cloudflare_api_key():
+    """Read the Cloudflare API token from cloudflare_apikey.txt beside this script."""
+    try:
+        with open(CLOUDFLARE_API_KEY_FILE, "r", encoding="utf-8") as handle:
+            key = handle.read().strip()
+    except FileNotFoundError:
+        print(
+            f"ERROR: Cloudflare API token not found. Create {CLOUDFLARE_API_KEY_FILE}.",
+            file=sys.stderr,
+        )
+        return None
+    if not key:
+        print(f"ERROR: {CLOUDFLARE_API_KEY_FILE} is empty.", file=sys.stderr)
+        return None
+    return key
+
+
+def get_cloudflare_zones(token):
+    """Fetch all Cloudflare zone names using a Cloudflare API token."""
+    zones = set()
+    page = 1
+    per_page = 50
+    session = requests.Session()
+    session.headers.update({
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+    })
+
+    while True:
+        response = session.get(
+            f"{CLOUDFLARE_BASE_URL}/zones",
+            params={"page": page, "per_page": per_page},
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("success") is not True:
+            errors = payload.get("errors", [])
+            raise RuntimeError(f"Cloudflare API reported an unsuccessful response: {errors}")
+        items = payload.get("result", [])
+        if not isinstance(items, list):
+            raise ValueError("Unexpected Cloudflare response: 'result' is not a list")
+        for item in items:
+            name = item.get("name") if isinstance(item, dict) else None
+            if name:
+                zones.add(str(name).strip().lower().rstrip("."))
+        page_info = payload.get("result_info", {})
+        total_pages = page_info.get("total_pages")
+        if total_pages is not None:
+            if page >= int(total_pages):
+                break
+        elif len(items) < per_page:
+            break
+        page += 1
+
+    print(f"Cloudflare check: collected {len(zones)} zone(s).", file=sys.stderr)
+    return zones
+
+
+def normalize_cloudflare_lookup_domain(domain):
+    """Remove Mailgun sending prefixes before comparing against Cloudflare zones."""
+    domain = str(domain).strip().lower().rstrip(".")
+    for prefix in ("mgn.", "mg."):
+        if domain.startswith(prefix):
+            domain = domain[len(prefix):]
+            break
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain
+
+
+def cloudflare_zone_status(domain, zones):
+    """Return Found when the normalized Mailgun domain is covered by a Cloudflare zone."""
+    normalized = normalize_cloudflare_lookup_domain(domain)
+    if not normalized:
+        return "Missing"
+    if normalized in zones or any(normalized.endswith("." + zone) for zone in zones):
+        return "Found"
+    return "Missing"
 
 def normalize_mailgun_domain(domain):
     """Map Mailgun sending domains to the corresponding RunCloud lookup name."""
@@ -559,7 +642,7 @@ def overall_status(state, dns, dmarc):
     return "OK"
 
 
-def audit_domain(domain_obj):
+def audit_domain(domain_obj, cloudflare_zones):
     domain = domain_obj["name"]
     print(f"Checking {domain}...", file=sys.stderr)
 
@@ -584,6 +667,7 @@ def audit_domain(domain_obj):
         "tracking": dns["tracking"],
         "dmarc": dmarc_status,
         "status": overall_status(state, dns, dmarc_status),
+        "Cloudflare": cloudflare_zone_status(domain, cloudflare_zones),
         "dmarc_current": dmarc_response.get("current", ""),
         "dmarc_expected": dmarc_response.get("entry", ""),
         "dmarc_error": dmarc_response.get("error", ""),
@@ -786,10 +870,19 @@ def main():
         return 1
 
     results = []
+    cloudflare_zones = set()
     if run_dns_check:
+        cloudflare_token = load_cloudflare_api_key()
+        if not cloudflare_token:
+            return 1
+        try:
+            cloudflare_zones = get_cloudflare_zones(cloudflare_token)
+        except (requests.RequestException, ValueError, RuntimeError) as exc:
+            print(f"ERROR retrieving Cloudflare zones: {exc}", file=sys.stderr)
+            return 1
         for item in domains:
             try:
-                results.append(audit_domain(item))
+                results.append(audit_domain(item, cloudflare_zones))
             except Exception as exc:
                 name = item.get("name", "UNKNOWN")
                 print(f"ERROR checking {name}: {exc}", file=sys.stderr)
@@ -801,6 +894,7 @@ def main():
                     "tracking": "ERROR",
                     "dmarc": "ERROR",
                     "status": "ERROR",
+                    "Cloudflare": cloudflare_zone_status(name, cloudflare_zones),
                     "dmarc_current": "",
                     "dmarc_expected": "",
                     "dmarc_error": str(exc),
@@ -842,18 +936,18 @@ def main():
     if run_dns_check:
         fields = [
             "domain", "mailgun_state", "spf", "dkim", "tracking", "dmarc",
-            "status", "dmarc_current", "dmarc_expected", "dmarc_error",
+            "status", "Cloudflare", "dmarc_current", "dmarc_expected", "dmarc_error",
         ]
         with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=fields)
             writer.writeheader()
             writer.writerows(results)
 
-        print("\nDOMAIN\tSPF\tDKIM\tDMARC\tSTATUS")
+        print("\nDOMAIN\tSPF\tDKIM\tDMARC\tSTATUS\tCLOUDFLARE")
         for row in results:
             print(
                 f"{row['domain']}\t{row['spf']}\t{row['dkim']}\t"
-                f"{row['dmarc']}\t{row['status']}"
+                f"{row['dmarc']}\t{row['status']}\t{row['Cloudflare']}"
             )
         print(f"\nCSV written to: {OUTPUT_FILE}")
     return 0
