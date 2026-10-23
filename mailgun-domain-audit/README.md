@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.20`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.21`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -11,6 +11,7 @@ The tool inventories domains in a Mailgun account and writes a CSV report with a
 - Checks DMARC using the Mailgun DMARC records endpoint.
 - Checks whether each normalized Mailgun domain is covered by a zone in your Cloudflare account and adds a `Cloudflare` column (`Found` or `Missing`) after `Status` in the audit CSV.
 - Exports results to CSV.
+- Prints a width-aligned terminal summary with each result directly beneath its column heading.
 - Uses the **EU API by default**; the API base can be overridden through an environment variable.
 - Reads the Mailgun API key from local `apikey.txt`, with an optional environment-variable override.
 - Optionally compares Mailgun sending domains with domains configured across RunCloud servers and web applications. RunCloud API requests use the system `curl` command to match the working request path in environments where Cloudflare challenges Python HTTP clients.
