@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.21] - 2026-10-23
+
+### Changed
+- Align terminal audit summary columns using calculated widths and separator lines, keeping every result directly beneath its heading.
+
 ## [0.3.20] - 2026-10-23
 
 ### Fixed
