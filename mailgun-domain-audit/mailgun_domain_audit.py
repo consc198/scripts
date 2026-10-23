@@ -7,6 +7,7 @@ Requires:
 Configuration:
     apikey.txt           Mailgun API key, unless MAILGUN_API_KEY is set.
     runcloud_apikey.txt  RunCloud API token for --runcloud-check.
+    cloudflare_apikey.txt Cloudflare API token for the DNS/DMARC audit.
     MAILGUN_API_BASE     Optional API base URL. Defaults to the EU endpoint.
 
 This script reports Mailgun DNS verification and DMARC API results separately.
@@ -338,6 +339,7 @@ def cloudflare_zone_status(domain, zones):
     if normalized in zones or any(normalized.endswith("." + zone) for zone in zones):
         return "Found"
     return "Missing"
+
 
 def normalize_mailgun_domain(domain):
     """Map Mailgun sending domains to the corresponding RunCloud lookup name."""
