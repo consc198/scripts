@@ -278,24 +278,55 @@ def load_cloudflare_api_key():
 
 
 def get_cloudflare_zones(token):
-    """Fetch all Cloudflare zone names using a Cloudflare API token."""
+    """Fetch all Cloudflare zone names over IPv4 using curl."""
     zones = set()
     page = 1
     per_page = 50
-    session = requests.Session()
-    session.headers.update({
-        "Accept": "application/json",
-        "Authorization": f"Bearer {token}",
-    })
+
+    def curl_quote(value):
+        return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "") + '"'
 
     while True:
-        response = session.get(
-            f"{CLOUDFLARE_BASE_URL}/zones",
-            params={"page": page, "per_page": per_page},
-            timeout=30,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        url = f"{CLOUDFLARE_BASE_URL}/zones?page={page}&per_page={per_page}"
+        config = "\n".join([
+            "silent",
+            "show-error",
+            f"url = {curl_quote(url)}",
+            f"header = {curl_quote('Accept: application/json')}",
+            f"header = {curl_quote(f'Authorization: Bearer {token}')}",
+            'write-out = "\\nHTTPSTATUS:%{http_code}"',
+            "",
+        ])
+        try:
+            response = subprocess.run(
+                ["curl", "--ipv4", "--config", "-"],
+                input=config,
+                text=True,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(f"Unable to run curl for Cloudflare IPv4 request: {exc}") from exc
+
+        if response.returncode != 0:
+            detail = response.stderr.strip() or f"curl exit code {response.returncode}"
+            raise RuntimeError(f"Cloudflare curl request failed: {detail}")
+
+        body, marker, status_text = response.stdout.rpartition("\nHTTPSTATUS:")
+        if not marker or not status_text.strip().isdigit():
+            raise RuntimeError("Could not read HTTP status from Cloudflare curl response.")
+        status_code = int(status_text.strip())
+        if status_code < 200 or status_code >= 300:
+            detail = body.strip()[:1000]
+            suffix = f"; response body: {detail}" if detail else ""
+            raise RuntimeError(f"Cloudflare HTTP {status_code} for {url}{suffix}")
+
+        try:
+            payload = json.loads(body)
+        except ValueError as exc:
+            raise RuntimeError(f"Cloudflare returned invalid JSON for {url}: {exc}") from exc
+
         if payload.get("success") is not True:
             errors = payload.get("errors", [])
             raise RuntimeError(f"Cloudflare API reported an unsuccessful response: {errors}")
@@ -315,9 +346,8 @@ def get_cloudflare_zones(token):
             break
         page += 1
 
-    print(f"Cloudflare check: collected {len(zones)} zone(s).", file=sys.stderr)
+    print(f"Cloudflare check: collected {len(zones)} zone(s) over IPv4.", file=sys.stderr)
     return zones
-
 
 def normalize_cloudflare_lookup_domain(domain):
     """Remove Mailgun sending prefixes before comparing against Cloudflare zones."""
