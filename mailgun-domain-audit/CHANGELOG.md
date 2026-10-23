@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.19] - 2026-10-23
+
+### Added
+- Include a `Cloudflare` column immediately after `Status` in the DNS audit CSV, marking each Mailgun domain `Found` or `Missing` based on Cloudflare zones.
+- Read a Cloudflare API token from local `cloudflare_apikey.txt`; normalize `mg.`/`mgn.` prefixes and match domains covered by a Cloudflare zone.
+
 ## [0.3.18] - 2026-10-21
 
 ### Fixed
