@@ -8,6 +8,9 @@ domains_to_delete.txt
 # Generated audit reports
 mailgun_domain_audit.csv
 
-# RunCloud comparison report and local credentials
+# RunCloud and Cloudflare API tokens
 runcloud_apikey.txt
+cloudflare_apikey.txt
+
+# RunCloud comparison report
 mailgun_domains_missing_in_runcloud.csv
