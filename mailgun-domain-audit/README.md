@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.18`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.19`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -9,6 +9,7 @@ The tool inventories domains in a Mailgun account and writes a CSV report with a
 - Lists domains from the Mailgun Domains API.
 - Explicitly requests Mailgun domain DNS records and checks SPF/DKIM-related verification data.
 - Checks DMARC using the Mailgun DMARC records endpoint.
+- Checks whether each normalized Mailgun domain is covered by a zone in your Cloudflare account and adds a `Cloudflare` column (`Found` or `Missing`) after `Status` in the audit CSV.
 - Exports results to CSV.
 - Uses the **EU API by default**; the API base can be overridden through an environment variable.
 - Reads the Mailgun API key from local `apikey.txt`, with an optional environment-variable override.
@@ -48,6 +49,14 @@ Optional output path:
 export MAILGUN_AUDIT_CSV='mailgun_domain_audit.csv'
 ```
 
+### Cloudflare zone check
+
+The DNS/DMARC audit also checks Cloudflare zones. Create `cloudflare_apikey.txt` beside the script and put a **Cloudflare API token** on one line. The token needs permission to read zones (typically the `Zone:Read` permission) and must include the zones you want to audit. This is a Cloudflare API token, not the account's Global API Key.
+
+The audit fetches all zone pages from the Cloudflare API. It removes a leading `mg.` or `mgn.` from Mailgun domain names before matching; for example, `mg.huisvoorgezondheid.be` is checked against the Cloudflare zone `huisvoorgezondheid.be`. It also ignores case, trailing dots, and a leading `www.`. A domain is marked `Found` if it exactly matches a zone or is a subdomain covered by that zone; otherwise it is marked `Missing`.
+
+If the token is absent or Cloudflare cannot be queried, the audit stops with an error rather than marking every domain as `Missing` based on an incomplete lookup. The token file is ignored by Git.
+
 ### Optional RunCloud comparison
 
 To enable the comparison, create `runcloud_apikey.txt` beside the script and put your RunCloud API token on one line. RunCloud API access must be enabled for your account. The script always reads the token from `runcloud_apikey.txt`; `RUNCLOUD_API_KEY` is not used.
@@ -68,7 +77,7 @@ The RunCloud check writes `mailgun_domains_missing_in_runcloud.csv` with any Mai
 
 For normalization, a leading `mg.` or `mgn.` is removed from Mailgun domain names (so `mg.stonedesign.be` is compared as `stonedesign.be` and `mgn.gunterbroodcoorens.com` as `gunterbroodcoorens.com`). Mailgun domains ending in `.conversalmail.be` or `.conversalhosting.be` use their first label as the customer/site name (so `floorsandmore.conversalmail.be` can match a RunCloud domain named `floorsandmore` or a full domain such as `floorsandmore.be`, `floorsandmore.com`, or another TLD). For these Conversal domains only, matching accepts a RunCloud domain that is exactly the customer/site name or starts with that name followed by a dot, regardless of the suffix. If exact label matching fails, it ignores dots and hyphens when comparing the customer label against the full RunCloud domain (so `mercomachines.conversalmail.be` can match `merco-machines.com`, and `asomartinus.conversalmail.be` can match `aso.martinusasse.be`). A leading `www.` is removed from both Mailgun and RunCloud domain names, so `www.solicom-verisafe.com` matches `solicom-verisafe.com`. For non-Conversal domains, a RunCloud subdomain ending in the normalized Mailgun domain also counts as a match (so `mg.allwaves.surf` can match `old.allwaves.surf`). Other domain names are compared as provided. The comparison is read-only.
 
-**Security:** `apikey.txt` and `runcloud_apikey.txt` contain secrets. Keep them local, do not commit them, and restrict their filesystem permissions where supported (for example, `chmod 600 apikey.txt runcloud_apikey.txt` on macOS/Linux). The repository includes `.gitignore` rules for these filenames.
+**Security:** `apikey.txt`, `runcloud_apikey.txt`, and `cloudflare_apikey.txt` contain secrets. Keep them local, do not commit them, and restrict their filesystem permissions where supported (for example, `chmod 600 apikey.txt runcloud_apikey.txt cloudflare_apikey.txt` on macOS/Linux). The repository includes `.gitignore` rules for these filenames.
 
 ### Delete selected Mailgun domains (destructive)
 
@@ -135,6 +144,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 - `mailgun_domain_audit.py` — audit and explicitly confirmed domain-deletion script.
 - `apikey.txt` — local Mailgun secret; do not commit.
 - `runcloud_apikey.txt` — optional local RunCloud API token; do not commit.
+- `cloudflare_apikey.txt` — local Cloudflare API token for zone checks; do not commit.
 - `README.md` — setup, usage, and limitations.
 - `CHANGELOG.md` — notable changes by version.
 - `VERSION` — current project version.
