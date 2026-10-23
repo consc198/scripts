@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-**Current script version:** `1.1.0` (Semantic Versioning).
+**Current script version:** `1.2.0` (Semantic Versioning).
 
 Check the installed script version without contacting RunCloud or requiring an API token:
 
@@ -14,7 +14,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 
 ## Script version and releases
 
-The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.1.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.2.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
 
 ## What it does
 
@@ -120,7 +120,24 @@ python3 install_runcloud_plugin.py --server 12345 --update-plugin akismet
 python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordfence --dry-run
 ```
 
-Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before` and `plugin_version_after` (null if a version could not be read). WP-CLI performs the update; unchanged versions are reported as `current` when both version reads succeed. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
+Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before`, `plugin_update_available_version` (when WP-CLI reports one), and `plugin_version_after`. Statuses include `updated`, `already_current`, `not_found`, `would_update`, and `failed`. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
+
+## Purge the RunCloud cache
+
+Use `--purge-runcache` to run the WP-CLI command `wp runcache purge` as the Linux user for each selected WordPress web app. By default, it targets all WordPress apps; use `--server`, `--webapp`, or `--webapps-file` to narrow the scope.
+
+```bash
+# Purge the RunCloud cache on all WordPress apps
+python3 install_runcloud_plugin.py --purge-runcache
+
+# Purge selected apps on one server
+python3 install_runcloud_plugin.py --server 12345 --webapp 67890 --purge-runcache
+
+# Preview the targets without running the purge command
+python3 install_runcloud_plugin.py --purge-runcache --dry-run
+```
+
+Results are written to `runcloud-cache-purge.json` by default, or to the path supplied with `--purge-output`. Each record includes the target site, status (`purged`, `would_purge`, or `failed`), message, and script version. Cache purge mode is separate from plugin install, update, and removal modes and cannot be combined with those modes.
 
 ## Remove a plugin from sites
 
