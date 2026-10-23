@@ -15,11 +15,10 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/conversal-admin-3.0.4.zip"
 PLUGIN_SHA256 = "1e2e98cbcd8fa20da8f996f82f91ca58feac210e434461f1c2b01cdd7c003ff6"
-SCRIPT_VERSION = "1.1.0"
+SCRIPT_VERSION = "1.2.0"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
-SCRIPT_VERSION = "1.1.0"
 
 
 def api_get(token, path, params=None):
@@ -259,6 +258,30 @@ def remove_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
     return "removed", "Plugin uninstalled and deactivated", matched_plugin
 
 
+def purge_runcloud_cache(server, webapp, webapp_user, dry_run):
+    """Purge the RunCloud cache for one WordPress web app."""
+    host = server.get("ipAddress")
+    root_path = webapp.get("rootPath")
+    if not host:
+        return "failed", "No server IP address"
+    if not root_path:
+        return "failed", "No web-app rootPath"
+
+    server_name = server.get("name", f"server-{server['id']}")
+    webapp_name = webapp.get("name", f"webapp-{webapp['id']}")
+    if dry_run:
+        print(f"[DRY-RUN] Would run 'wp runcache purge' on {server_name} / {webapp_name}")
+        return "would_purge", "Dry-run; RunCloud cache was not purged"
+
+    try:
+        output = run_as_webapp_user(host, webapp_user, root_path, "runcache purge")
+    except Exception as exc:
+        return "failed", f"RunCloud cache purge failed: {exc}"
+
+    print(f"[PURGED] {server_name} / {webapp_name}: RunCloud cache")
+    return "purged", output or "RunCloud cache purge command completed"
+
+
 def version_tuple(version):
     """Compare numeric WordPress versions without requiring another dependency."""
     match = re.match(r"^\s*(\d+(?:\.\d+)*)(?:[-+].*)?\s*$", version)
@@ -325,7 +348,6 @@ def install_plugin(server, webapp, webapp_user, dry_run, minimum_version=None):
 def main():
     parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a plugin ZIP via root SSH.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {SCRIPT_VERSION}")
-    parser.add_argument("--version", action="version", version=f"%(prog)s {SCRIPT_VERSION}")
     parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
     parser.add_argument("--server", help="RunCloud server ID or exact server name. Omit to process all servers.")
     parser.add_argument("--webapp", action="append", help="Target a WordPress web app by RunCloud web app ID or exact name. May be repeated; names must match uniquely.")
@@ -335,14 +357,17 @@ def main():
     parser.add_argument("--removal-output", default="runcloud-plugin-removal.json", help="JSON report path for --remove-plugin mode.")
     parser.add_argument("--update-plugin", action="append", metavar="PLUGIN", help="Update this installed plugin to the latest available version on selected WordPress apps. Repeat to update multiple plugins; writes a separate JSON report.")
     parser.add_argument("--update-output", default="runcloud-plugin-update.json", help="JSON report path for --update-plugin mode.")
+    parser.add_argument("--purge-runcache", action="store_true", help="Purge the RunCloud cache on selected WordPress apps using WP-CLI.")
+    parser.add_argument("--purge-output", default="runcloud-cache-purge.json", help="JSON report path for --purge-runcache mode.")
     parser.add_argument("--token", help="RunCloud API token (overrides environment variable and token.txt).")
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
 
-    if args.remove_plugin and args.update_plugin:
-        parser.error("--remove-plugin and --update-plugin are separate modes and cannot be used together.")
-    if (args.remove_plugin or args.update_plugin) and args.min_wp_version:
-        parser.error("--min-wp-version applies to installation mode and cannot be combined with --remove-plugin or --update-plugin.")
+    operation_modes = sum(bool(value) for value in (args.remove_plugin, args.update_plugin, args.purge_runcache))
+    if operation_modes > 1:
+        parser.error("--remove-plugin, --update-plugin, and --purge-runcache are separate modes and cannot be used together.")
+    if (args.remove_plugin or args.update_plugin or args.purge_runcache) and args.min_wp_version:
+        parser.error("--min-wp-version applies to installation mode and cannot be combined with --remove-plugin, --update-plugin, or --purge-runcache.")
     if args.min_wp_version:
         try:
             version_tuple(args.min_wp_version)
@@ -489,6 +514,8 @@ def main():
                 webapp_user = get_webapp_ssh_user(token, server_id, app)
             except Exception as exc:
                 requested_plugins = (args.remove_plugin or args.update_plugin) if (args.remove_plugin or args.update_plugin) else [None]
+                if args.purge_runcache:
+                    requested_plugins = [None]
                 for plugin_requested in requested_plugins:
                     results.append({
                         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -572,6 +599,31 @@ def main():
                         "status": status,
                         "message": message,
                     })
+            elif args.purge_runcache:
+                try:
+                    status, message = purge_runcloud_cache(server, app, webapp_user, args.dry_run)
+                except Exception as exc:
+                    status, message = "failed", str(exc)
+                    print(f"  FAILED purging RunCloud cache: {message}", file=sys.stderr)
+                results.append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "server_id": server_id,
+                    "server": server_name,
+                    "server_ip": server.get("ipAddress"),
+                    "webapp_id": app.get("id"),
+                    "webapp": app.get("name"),
+                    "server_user_id": app.get("server_user_id"),
+                    "ssh_user": SSH_USER,
+                    "run_as_user": webapp_user,
+                    "rootPath": app.get("rootPath"),
+                    "operation": "purge_runcache",
+                    "plugin_requested": None,
+                    "plugin_matched": None,
+                    "wordpress_version": None,
+                    "minimum_wordpress_version": None,
+                    "status": status,
+                    "message": message,
+                })
             else:
                 installed_version = None
                 try:
@@ -602,7 +654,7 @@ def main():
 
     for entry in results:
         entry.setdefault("script_version", SCRIPT_VERSION)
-    report_path = args.removal_output if args.remove_plugin else (args.update_output if args.update_plugin else args.output)
+    report_path = args.removal_output if args.remove_plugin else (args.update_output if args.update_plugin else (args.purge_output if args.purge_runcache else args.output))
     for record in results:
         record["script_version"] = SCRIPT_VERSION
     Path(report_path).write_text(json.dumps(results, indent=2), encoding="utf-8")
@@ -623,6 +675,15 @@ def main():
         print(f"Already current:          {already_current}")
         print(f"Not installed:            {not_found}")
         print(f"Would update (dry-run):   {would_update}")
+    elif args.purge_runcache:
+        purged = sum(r.get("status") == "purged" for r in results)
+        would_purge = sum(r.get("status") == "would_purge" for r in results)
+        print("RUNCloud WORDPRESS CACHE PURGE REPORT")
+        print("=" * 72)
+        print(f"Servers processed:        {len(servers)}")
+        print(f"WordPress sites checked:  {wordpress_count}")
+        print(f"Purged:                   {purged}")
+        print(f"Would purge (dry-run):    {would_purge}")
     elif args.remove_plugin:
         removed = sum(r.get("status") == "removed" for r in results)
         not_found = sum(r.get("status") == "not_found" for r in results)
