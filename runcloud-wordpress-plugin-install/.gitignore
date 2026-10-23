@@ -6,3 +6,4 @@ token.txt
 webapps.txt
 runcloud-plugin-removal.json
 runcloud-plugin-update.json
+runcloud-cache-purge.json
