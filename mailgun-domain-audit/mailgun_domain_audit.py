@@ -987,8 +987,8 @@ def main():
         ]
         widths = {
             header: max(
-                len(header),
-                *(len(str(row.get(key, ""))) for row in results),
+                [len(header)]
+                + [len(str(row.get(key, ""))) for row in results]
             )
             for header, key in columns
         }
