@@ -1,6 +1,6 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.19`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.20`** · Read-only audit utility for Mailgun sending domains.
 
 The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
 
@@ -19,7 +19,7 @@ The tool inventories domains in a Mailgun account and writes a CSV report with a
 
 - Python 3.9+
 - `requests`
-- `curl` (required for the optional RunCloud comparison)
+- `curl` (required for the Cloudflare zone check and optional RunCloud comparison)
 
 Install:
 
@@ -53,7 +53,7 @@ export MAILGUN_AUDIT_CSV='mailgun_domain_audit.csv'
 
 The DNS/DMARC audit also checks Cloudflare zones. Create `cloudflare_apikey.txt` beside the script and put a **Cloudflare API token** on one line. The token needs permission to read zones (typically the `Zone:Read` permission) and must include the zones you want to audit. This is a Cloudflare API token, not the account's Global API Key.
 
-The audit fetches all zone pages from the Cloudflare API. It removes a leading `mg.` or `mgn.` from Mailgun domain names before matching; for example, `mg.huisvoorgezondheid.be` is checked against the Cloudflare zone `huisvoorgezondheid.be`. It also ignores case, trailing dots, and a leading `www.`. A domain is marked `Found` if it exactly matches a zone or is a subdomain covered by that zone; otherwise it is marked `Missing`.
+The audit fetches all zone pages from the Cloudflare API using `curl --ipv4`, so Cloudflare requests use IPv4 even when the machine has IPv6 connectivity issues. It removes a leading `mg.` or `mgn.` from Mailgun domain names before matching; for example, `mg.huisvoorgezondheid.be` is checked against the Cloudflare zone `huisvoorgezondheid.be`. It also ignores case, trailing dots, and a leading `www.`. A domain is marked `Found` if it exactly matches a zone or is a subdomain covered by that zone; otherwise it is marked `Missing`.
 
 If the token is absent or Cloudflare cannot be queried, the audit stops with an error rather than marking every domain as `Missing` based on an incomplete lookup. The token file is ignored by Git.
 
