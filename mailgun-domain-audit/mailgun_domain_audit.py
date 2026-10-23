@@ -975,12 +975,31 @@ def main():
             writer.writeheader()
             writer.writerows(results)
 
-        print("\nDOMAIN\tSPF\tDKIM\tDMARC\tSTATUS\tCLOUDFLARE")
-        for row in results:
-            print(
-                f"{row['domain']}\t{row['spf']}\t{row['dkim']}\t"
-                f"{row['dmarc']}\t{row['status']}\t{row['Cloudflare']}"
+        # Calculate widths from both headers and values so every result aligns
+        # directly beneath its column heading, regardless of domain length.
+        columns = [
+            ("DOMAIN", "domain"),
+            ("SPF", "spf"),
+            ("DKIM", "dkim"),
+            ("DMARC", "dmarc"),
+            ("STATUS", "status"),
+            ("CLOUDFLARE", "Cloudflare"),
+        ]
+        widths = {
+            header: max(
+                len(header),
+                *(len(str(row.get(key, ""))) for row in results),
             )
+            for header, key in columns
+        }
+        print()
+        print("  ".join(header.ljust(widths[header]) for header, _ in columns))
+        print("  ".join("-" * widths[header] for header, _ in columns))
+        for row in results:
+            print("  ".join(
+                str(row.get(key, "")).ljust(widths[header])
+                for header, key in columns
+            ))
         print(f"\nCSV written to: {OUTPUT_FILE}")
     return 0
 
