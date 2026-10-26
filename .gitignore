@@ -1,2 +1,4 @@
 # Never commit RunCloud API credentials
 token.txt
+# Never commit RunCloud credentials file used by the scanner
+tokens.txt
