@@ -1,3 +1,0 @@
-[submodule "vulnerability-scanning/vendor/wordfence-cli"]
-	path = vulnerability-scanning/vendor/wordfence-cli
-	url = https://github.com/wordfence/wordfence-cli.git
