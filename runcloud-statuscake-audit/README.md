@@ -1,6 +1,6 @@
 # RunCloud ↔ StatusCake Monitor Audit
 
-**Current version:** `1.1.0` · See [CHANGELOG.md](CHANGELOG.md) for release history.
+**Current version:** `1.1.1` · See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 A read-only Python script that checks every RunCloud web app against StatusCake uptime monitors and writes web apps without a matching monitor to a text report.
 
