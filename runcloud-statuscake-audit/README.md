@@ -45,7 +45,7 @@ python3 audit_monitors.py \
 2. Fetches all StatusCake **uptime** checks.
 3. Normalizes hostnames (case-insensitive, ignores a leading `www.`) and matches RunCloud domains against the monitor URL hostname.
 4. If no domain matches, falls back to an exact case-insensitive match between the RunCloud web app name/alias and the StatusCake monitor name.
-5. Excludes any hostname equal to `temp-site.link` or ending in `.temp-site.link`. Web apps whose known domains are all in this excluded namespace are omitted entirely; if an app has both temporary and non-temporary domains, only the non-temporary domains are used for monitor matching.
+5. Excludes hostnames equal to `temp-site.link` or `conversal.io`, and their subdomains. Web apps whose known domains are all in these excluded namespaces are omitted entirely; if an app has both excluded and other domains, only the other domains are used for monitor matching.
 6. Writes unmatched web apps, with server name, IDs, and known domains, to the report.
 
 A monitor only counts as a match when it is an uptime check. Page Speed or SSL-only checks are not included. Review the report before making monitoring changes; names and domains may differ intentionally.
