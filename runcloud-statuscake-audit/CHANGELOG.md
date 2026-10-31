@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html): MAJOR for incompatible changes, MINOR for backward-compatible functionality, and PATCH for backward-compatible fixes.
 
+## [1.1.0] - 2026-10-31
+
+### Changed
+- Exclude `temp-site.link` and its subdomains from monitor matching.
+- Omit web apps entirely when all their known domains are in the excluded temporary namespace.
+- Report the number of excluded apps separately from the number audited.
+
 ## [1.0.0] - 2026-10-22
 
 ### Added
