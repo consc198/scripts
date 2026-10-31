@@ -22,7 +22,7 @@ import subprocess
 from urllib.parse import urlencode, urlparse
 
 __version__ = "1.1.0"
-EXCLUDED_DOMAIN_SUFFIX = "temp-site.link"
+EXCLUDED_DOMAIN_SUFFIXES = ("temp-site.link", "conversal.io")
 
 RUNcloud_BASE = "https://manage.runcloud.io/api/v3"
 STATUSCAKE_BASE = "https://api.statuscake.com/v1"
@@ -287,8 +287,10 @@ def main() -> int:
             # domain for an app is temporary, omit the entire app from the audit.
             eligible_domains = {
                 domain for domain in domains
-                if domain != EXCLUDED_DOMAIN_SUFFIX
-                and not domain.endswith("." + EXCLUDED_DOMAIN_SUFFIX)
+                if not any(
+                    domain == suffix or domain.endswith("." + suffix)
+                    for suffix in EXCLUDED_DOMAIN_SUFFIXES
+                )
             }
             if domains and not eligible_domains:
                 excluded_temp_apps += 1
@@ -311,7 +313,7 @@ def main() -> int:
             "RunCloud web apps without a matching StatusCake uptime monitor\n"
             f"Audit completed: {time.strftime('%Y-%m-%d %H:%M:%S %Z')}\n"
             f"RunCloud web apps found: {len(apps)}\n"
-            f"RunCloud web apps excluded (temp-site.link only): {excluded_temp_apps}\n"
+            f"RunCloud web apps excluded (temporary/internal domains only): {excluded_temp_apps}\n"
             f"RunCloud web apps audited: {len(apps) - excluded_temp_apps}\n"
             f"StatusCake uptime monitors checked: {len(monitors)}\n"
             f"Missing monitor count: {len(missing)}\n"
