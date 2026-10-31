@@ -21,7 +21,8 @@ from typing import Any
 import subprocess
 from urllib.parse import urlencode, urlparse
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
+EXCLUDED_DOMAIN_SUFFIX = "temp-site.link"
 
 RUNcloud_BASE = "https://manage.runcloud.io/api/v3"
 STATUSCAKE_BASE = "https://api.statuscake.com/v1"
@@ -278,10 +279,21 @@ def main() -> int:
         print(f"Found {len(apps)} RunCloud web app(s) and {len(monitors)} StatusCake uptime monitor(s).")
 
         missing: list[str] = []
+        excluded_temp_apps = 0
         for server, app in apps:
             app_name = str(app.get("name") or f"Web app {app.get('id', 'unknown')}")
             domains = webapp_domains(runcloud_token, server.get("id"), app)
-            matched = bool(domains & hosts)
+            # Exclude temp-site.link hostnames from matching. If every known
+            # domain for an app is temporary, omit the entire app from the audit.
+            eligible_domains = {
+                domain for domain in domains
+                if domain != EXCLUDED_DOMAIN_SUFFIX
+                and not domain.endswith("." + EXCLUDED_DOMAIN_SUFFIX)
+            }
+            if domains and not eligible_domains:
+                excluded_temp_apps += 1
+                continue
+            matched = bool(eligible_domains & hosts)
             if not matched:
                 aliases = {
                     str(value).strip().casefold()
@@ -298,7 +310,9 @@ def main() -> int:
         output_path.write_text(
             "RunCloud web apps without a matching StatusCake uptime monitor\n"
             f"Audit completed: {time.strftime('%Y-%m-%d %H:%M:%S %Z')}\n"
-            f"RunCloud web apps checked: {len(apps)}\n"
+            f"RunCloud web apps found: {len(apps)}\n"
+            f"RunCloud web apps excluded (temp-site.link only): {excluded_temp_apps}\n"
+            f"RunCloud web apps audited: {len(apps) - excluded_temp_apps}\n"
             f"StatusCake uptime monitors checked: {len(monitors)}\n"
             f"Missing monitor count: {len(missing)}\n"
             + ("-" * 72) + "\n"
