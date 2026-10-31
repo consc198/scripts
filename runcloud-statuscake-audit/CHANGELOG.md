@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html): MAJOR for incompatible changes, MINOR for backward-compatible functionality, and PATCH for backward-compatible fixes.
 
+## [1.2.0] - 2026-10-31
+
+### Changed
+- Exclude web-app hostnames whose first subdomain label starts with `pre-prod`.
+- Continue auditing non-excluded domains when an app has a mixture of excluded and eligible domains.
+
 ## [1.1.1] - 2026-10-31
 
 ### Changed
