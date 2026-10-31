@@ -21,7 +21,7 @@ from typing import Any
 import subprocess
 from urllib.parse import urlencode, urlparse
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 EXCLUDED_DOMAIN_SUFFIXES = ("temp-site.link", "conversal.io")
 
 RUNcloud_BASE = "https://manage.runcloud.io/api/v3"
@@ -292,6 +292,7 @@ def main() -> int:
                     for suffix in EXCLUDED_DOMAIN_SUFFIXES
                 )
                 and not domain.split(".", 1)[0].startswith("pre-prod")
+                and domain.split(".", 1)[0] != "staging"
             }
             if domains and not eligible_domains:
                 excluded_temp_apps += 1
