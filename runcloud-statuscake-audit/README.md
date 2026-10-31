@@ -1,6 +1,6 @@
 # RunCloud ↔ StatusCake Monitor Audit
 
-**Current version:** `1.2.1` · See [CHANGELOG.md](CHANGELOG.md) for release history.
+**Current version:** `1.2.2` · See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 A read-only Python script that checks every RunCloud web app against StatusCake uptime monitors and writes web apps without a matching monitor to a text report.
 
@@ -45,7 +45,7 @@ python3 audit_monitors.py \
 2. Fetches all StatusCake **uptime** checks.
 3. Normalizes hostnames (case-insensitive, ignores a leading `www.`) and matches RunCloud domains against the monitor URL hostname.
 4. If no domain matches, falls back to an exact case-insensitive match between the RunCloud web app name/alias and the StatusCake monitor name.
-5. Excludes hostnames equal to `temp-site.link` or `conversal.io`, and their subdomains. It also excludes hostnames whose first subdomain label starts with `pre-prod` (for example, `pre-prod.example.com` or `pre-prod-2.example.com`), and hostnames whose first subdomain label is exactly `staging` (for example, `staging.example.com`). Web apps whose known domains are all excluded are omitted entirely; if an app has both excluded and other domains, only the other domains are used for monitor matching.
+5. Excludes hostnames equal to `temp-site.link` or `conversal.io`, and their subdomains. It also excludes hostnames whose first subdomain label starts with `pre-prod` (for example, `pre-prod.example.com` or `pre-prod-2.example.com`), and hostnames whose first subdomain label is exactly `staging` or `old` (for example, `staging.example.com` or `old.example.com`). Web apps whose known domains are all excluded are omitted entirely; if an app has both excluded and other domains, only the other domains are used for monitor matching.
 6. Writes unmatched web apps, with server name, IDs, and known domains, to the report.
 
 A monitor only counts as a match when it is an uptime check. Page Speed or SSL-only checks are not included. Review the report before making monitoring changes; names and domains may differ intentionally.
