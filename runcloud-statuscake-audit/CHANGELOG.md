@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html): MAJOR for incompatible changes, MINOR for backward-compatible functionality, and PATCH for backward-compatible fixes.
 
+## [1.1.1] - 2026-10-31
+
+### Changed
+- Exclude `conversal.io` and its subdomains from monitor matching, alongside the existing `temp-site.link` exclusion.
+
 ## [1.1.0] - 2026-10-31
 
 ### Changed
