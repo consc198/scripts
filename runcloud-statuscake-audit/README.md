@@ -1,6 +1,6 @@
 # RunCloud ↔ StatusCake Monitor Audit
 
-**Current version:** `1.0.0` · See [CHANGELOG.md](CHANGELOG.md) for release history.
+**Current version:** `1.1.0` · See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 A read-only Python script that checks every RunCloud web app against StatusCake uptime monitors and writes web apps without a matching monitor to a text report.
 
@@ -28,7 +28,7 @@ From this directory:
 python3 audit_monitors.py
 ```
 
-The report is written to `webapps_missing_statuscake.txt`. The script prints counts and any API errors to the terminal. To print the current version, run `python3 audit_monitors.py --version`.
+The report is written to `webapps_missing_statuscake.txt`. It reports how many apps were excluded because they only had `temp-site.link` domains. The script prints counts and any API errors to the terminal. To print the current version, run `python3 audit_monitors.py --version`.
 
 You can override the token and report paths:
 
@@ -45,7 +45,8 @@ python3 audit_monitors.py \
 2. Fetches all StatusCake **uptime** checks.
 3. Normalizes hostnames (case-insensitive, ignores a leading `www.`) and matches RunCloud domains against the monitor URL hostname.
 4. If no domain matches, falls back to an exact case-insensitive match between the RunCloud web app name/alias and the StatusCake monitor name.
-5. Writes unmatched web apps, with server name, IDs, and known domains, to the report.
+5. Excludes any hostname equal to `temp-site.link` or ending in `.temp-site.link`. Web apps whose known domains are all in this excluded namespace are omitted entirely; if an app has both temporary and non-temporary domains, only the non-temporary domains are used for monitor matching.
+6. Writes unmatched web apps, with server name, IDs, and known domains, to the report.
 
 A monitor only counts as a match when it is an uptime check. Page Speed or SSL-only checks are not included. Review the report before making monitoring changes; names and domains may differ intentionally.
 
