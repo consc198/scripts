@@ -21,7 +21,7 @@ from typing import Any
 import subprocess
 from urllib.parse import urlencode, urlparse
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 EXCLUDED_DOMAIN_SUFFIXES = ("temp-site.link", "conversal.io")
 
 RUNcloud_BASE = "https://manage.runcloud.io/api/v3"
