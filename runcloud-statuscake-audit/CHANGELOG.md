@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html): MAJOR for incompatible changes, MINOR for backward-compatible functionality, and PATCH for backward-compatible fixes.
 
+## [1.3.0] - 2026-11-01
+
+### Changed
+- Exclude domains whose first subdomain label starts with `database`.
+
 ## [1.2.2] - 2026-10-31
 
 ### Changed
