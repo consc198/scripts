@@ -334,7 +334,7 @@ def scan_server_max_children_logs(server):
 
     pattern = re.compile(
         r"^\[([^]]+)\]\s+WARNING:\s+\[pool\s+([^]]+)\]\s+"
-        r"server reached max_children setting\\s+\\((\\d+)\\)"
+        r"server reached max_children setting\s+\((\d+)\)"
     )
     hits = []
     for line in result.stdout.splitlines():
