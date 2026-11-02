@@ -316,7 +316,7 @@ def scan_server_max_children_logs(server):
 
     remote_command = (
         "grep -hE '^\\[[^]]+\\] WARNING: \\[pool [^]]+\\] "
-        "server reached max_children setting \\\\([0-9]+\\\\)' "
+        "server reached max_children setting \\([0-9]+\\)' "
         "/var/log/php*rc-fpm.log 2>/dev/null || true"
     )
     command = [
