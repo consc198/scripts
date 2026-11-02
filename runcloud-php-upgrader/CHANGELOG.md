@@ -77,6 +77,13 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Added
 - Include the webapp URL/domain in the read-only PHP-version inventory when the API response provides it.
 
+## [1.8.0] - 2026-11-02
+
+### Added
+- Add `--update-pm-max-children FROM TO` to bulk-update webapps whose current PHP-FPM `processManagerMaxChildren` exactly matches the source value.
+- Read existing webapp settings and preserve the other settings when applying the PHP-FPM update.
+- Support dry-run previews, `--apply`, `--server-id`, `--webapps-file`, and the existing batching behavior for this operation.
+
 ## [1.7.2] - 2026-10-22
 
 ### Changed
