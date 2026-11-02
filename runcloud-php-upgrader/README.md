@@ -1,6 +1,6 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.7.2**
+**Current version: 1.8.0**
 
 Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required. A terminal progress bar shows webapp scan progress. The optional `--update-php-cli` flag also updates the server-level PHP-CLI version using the same source and target version options.
 
@@ -87,6 +87,31 @@ python3 upgrade_runcloud_php.py --webapps-file webapps.txt --source-php php81rc 
 ```
 
 The script reports listed names that were not found and listed webapps that do not use one of the selected source PHP versions. If the same exact webapp name exists on multiple servers, each matching webapp is eligible. The text-file filter selects webapps only; if you explicitly add `--update-php-cli`, server-level PHP-CLI updates are still handled separately. The file is read from the path you provide.
+
+### Bulk-update PHP-FPM pm.max_children
+
+Use `--update-pm-max-children FROM TO` to find webapps whose current PHP-FPM `pm.max_children` value exactly matches `FROM`, then set it to `TO`. This is a separate operation from PHP-version upgrades.
+
+Preview webapps currently set to 10 and show the proposed change to 15:
+
+```bash
+python3 upgrade_runcloud_php.py --update-pm-max-children 10 15
+```
+
+Apply the changes after reviewing the preview:
+
+```bash
+python3 upgrade_runcloud_php.py --update-pm-max-children 10 15 --apply
+```
+
+You can also restrict the operation to one server or to exact webapp names in a file:
+
+```bash
+python3 upgrade_runcloud_php.py --update-pm-max-children 10 15 --server-id 123
+python3 upgrade_runcloud_php.py --update-pm-max-children 10 15 --webapps-file webapps.txt
+```
+
+The script reads each selected webapp's current settings and only targets an exact numeric match. It updates PHP-FPM settings through RunCloud's `/settings/fpmnginx` API endpoint, preserving the other settings returned by the API. The normal batch size and 10-minute pause between applied batches also apply. Dry run is the default; `--apply` is required to make changes. This mode cannot be combined with PHP-CLI update or PHP inventory modes.
 
 ### Batch webapp PHP updates
 
