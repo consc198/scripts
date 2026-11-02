@@ -1,0 +1,16 @@
+# Secrets
+token.txt
+statuscaketoken.txt
+apikey.txt
+box_token.txt
+.env
+*.pem
+*.key
+
+# Runtime data
+backups/
+reports/
+logs/
+*.log
+__pycache__/
+.venv/
