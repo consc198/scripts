@@ -7,6 +7,7 @@ The token file is intentionally ignored by Git. API calls are made with curl.
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -295,6 +296,203 @@ def run_pm_max_children_update(token, servers, args, requested_names):
         print("No changes made. Review the matches, then add --apply to update them.")
 
 
+
+
+def get_server_ip(server):
+    """Find a public/reachable server address in the RunCloud server record."""
+    for key in ("ipAddress", "ip", "publicIp", "publicIP", "ip_address", "address"):
+        value = server.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def scan_server_max_children_logs(server):
+    """SSH to a server and return parsed max_children warning records."""
+    server_name = server.get("name", str(server.get("id", "unknown")))
+    server_ip = get_server_ip(server)
+    if not server_ip:
+        raise RuntimeError("No server IP address was present in the RunCloud server record.")
+
+    remote_command = (
+        "grep -hE '^\\\\[[^]]+\\\\] WARNING: \\\\[pool [^]]+\\\\] "
+        "server reached max_children setting \\\\([0-9]+\\\\)' "
+        "/var/log/php*rc-fpm.log 2>/dev/null || true"
+    )
+    command = [
+        "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+        "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2",
+        f"root@{server_ip}", remote_command,
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=90, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"SSH scan failed: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"ssh exited with status {result.returncode}"
+        raise RuntimeError(detail[:500])
+
+    pattern = re.compile(
+        r"^\\[([^]]+)\\]\\s+WARNING:\\s+\\[pool\\s+([^]]+)\\]\\s+"
+        r"server reached max_children setting\\s+\\((\\d+)\\)"
+    )
+    hits = []
+    for line in result.stdout.splitlines():
+        match = pattern.search(line.strip())
+        if match:
+            hits.append({
+                "server_name": server_name,
+                "server_id": str(server.get("id", "")),
+                "server_ip": server_ip,
+                "timestamp": match.group(1),
+                "pool": match.group(2).strip(),
+                "limit": int(match.group(3)),
+            })
+    return hits
+
+
+def normalize_pool_name(value):
+    """Normalize pool and webapp labels for conservative exact matching."""
+    return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+
+def find_webapp_for_pool(apps, pool_name):
+    """Match a log pool to a webapp using exact normalized metadata labels."""
+    target = normalize_pool_name(pool_name)
+    if not target:
+        return None
+    for app in apps:
+        candidates = [app.get("name")]
+        for key in ("pool", "poolName", "phpFpmPool", "phpFpmPoolName"):
+            candidates.append(app.get(key))
+        if any(value and normalize_pool_name(value) == target for value in candidates):
+            return app
+    return None
+
+
+def run_max_children_log_report(token, servers, args):
+    """Scan PHP-FPM logs and optionally raise limits only for reported webapps."""
+    all_hits = []
+    apps_by_server = {}
+    for index, server in enumerate(servers, 1):
+        server_name = server.get("name", str(server.get("id", "unknown")))
+        print(f"Scanning PHP-FPM logs on server {index}/{len(servers)}: {server_name}...", flush=True)
+        try:
+            hits = scan_server_max_children_logs(server)
+            all_hits.extend(hits)
+            print(f"  Found {len(hits)} max_children warning(s).")
+        except RuntimeError as exc:
+            print(f"  [ERROR] {server_name}: {exc}")
+
+    # Aggregate repeated warnings for the same server/pool/limit.
+    aggregated = {}
+    for hit in all_hits:
+        key = (hit["server_id"], hit["pool"], hit["limit"])
+        if key not in aggregated:
+            aggregated[key] = dict(hit, occurrences=0)
+        aggregated[key]["occurrences"] += 1
+        aggregated[key]["timestamp"] = hit["timestamp"]
+
+    rows = sorted(aggregated.values(), key=lambda row: (row["server_name"].lower(), row["pool"].lower(), row["limit"]))
+    print("\n--- PHP-FPM max_children log report ---")
+    if not rows:
+        print("No max_children limit warnings were found in /var/log/php*rc-fpm.log.")
+        return
+
+    headers = ("SERVER", "SERVER IP", "POOL / WEBAPP", "CURRENT LIMIT", "HITS", "LATEST LOG TIME")
+    values = [
+        (r["server_name"], r["server_ip"], r["pool"], str(r["limit"]),
+         str(r["occurrences"]), r["timestamp"])
+        for r in rows
+    ]
+    widths = [max(len(headers[i]), *(len(row[i]) for row in values)) for i in range(len(headers))]
+    print("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
+    print("  ".join("-" * widths[i] for i in range(len(headers))))
+    for row in values:
+        print("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
+    print(f"\nFound {len(rows)} server/pool/limit combination(s), across {sum(r['occurrences'] for r in rows)} warning line(s).")
+
+    if not args.update_hit_max_children:
+        print("Read-only report. To raise a selected limit, rerun with --update-hit-max-children FROM TO.")
+        return
+
+    from_limit, to_limit = args.update_hit_max_children
+    print(f"\nPreparing updates for reported pools at limit {from_limit}: {from_limit} -> {to_limit}")
+    server_lookup = {str(server.get("id", "")): server for server in servers}
+    candidates = []
+    for row in rows:
+        if row["limit"] != from_limit:
+            continue
+        server = server_lookup.get(row["server_id"])
+        if server is None:
+            continue
+        server_id = row["server_id"]
+        if server_id not in apps_by_server:
+            try:
+                apps_by_server[server_id] = get_webapps_with_retry(
+                    token, server_id, row["server_name"]
+                )
+            except (APIError, ValueError) as exc:
+                print(f"  [ERROR] Could not retrieve webapps for {row['server_name']}: {exc}")
+                apps_by_server[server_id] = None
+        apps = apps_by_server[server_id]
+        if apps is None:
+            continue
+        app = find_webapp_for_pool(apps, row["pool"])
+        if app is None:
+            print(f"  [UNMATCHED] {row['server_name']} / pool '{row['pool']}': no exact webapp-name/pool metadata match.")
+            continue
+        app_id = app.get("id")
+        try:
+            settings = curl_request(
+                "GET", f"{BASE_URL}/servers/{server_id}/webapps/{app_id}/settings", token
+            )
+            if not isinstance(settings, dict):
+                raise APIError("Unexpected webapp settings response.")
+            current = settings.get("processManagerMaxChildren")
+            if current is None or int(current) != from_limit:
+                print(
+                    f"  [SKIP] {row['server_name']} / {app.get('name', app_id)}: "
+                    f"current API setting is {current!r}, not {from_limit}."
+                )
+                continue
+            candidates.append((row, server, app, settings))
+        except (APIError, TypeError, ValueError) as exc:
+            print(f"  [ERROR] Could not verify {row['server_name']} / {app.get('name', app_id)}: {exc}")
+
+    print(f"\nVerified {len(candidates)} webapp(s) with a log hit at {from_limit} and a current setting of {from_limit}.")
+    print("Mode:", "LIVE CHANGES" if args.apply else "DRY RUN")
+    for row, server, app, settings in candidates:
+        print(
+            f"  {row['server_name']} / {app.get('name', '(unnamed)')} "
+            f"(pool {row['pool']}, webapp ID {app.get('id')}): {from_limit} -> {to_limit}"
+        )
+        if not args.apply:
+            continue
+        payload = dict(settings)
+        payload["stack"] = app.get("stack")
+        payload["stackMode"] = app.get("stackMode")
+        if "publicPath" in app:
+            payload["publicPath"] = app.get("publicPath")
+        payload["processManagerMaxChildren"] = to_limit
+        try:
+            curl_request(
+                "PATCH",
+                f"{BASE_URL}/servers/{server['id']}/webapps/{app['id']}/settings/fpmnginx",
+                token,
+                json_body=payload,
+            )
+            print("    [OK] PHP-FPM settings update request accepted.")
+        except APIError as exc:
+            print(f"    [ERROR] PHP-FPM settings update failed: {exc}")
+        time.sleep(0.25)
+
+    if args.apply:
+        print(f"\nSubmitted {len(candidates)} PHP-FPM settings update request(s).")
+    else:
+        print("\nNo changes made. Review the verified webapps, then add --apply to update them.")
+
+
 def show_progress(done, total, label="Processing"):
     """Render a compact terminal progress bar."""
     width = 30
@@ -344,6 +542,14 @@ def main():
         help="List webapps running this PHP version and show their detected app type; makes no changes.",
     )
     parser.add_argument(
+        "--scan-max-children", action="store_true",
+        help="SSH to every selected server and report PHP-FPM max_children limit warnings.",
+    )
+    parser.add_argument(
+        "--update-hit-max-children", nargs=2, type=int, metavar=("FROM", "TO"),
+        help="Scan logs, then raise only reported webapps whose current limit equals FROM.",
+    )
+    parser.add_argument(
         "--update-pm-max-children", nargs=2, type=int, metavar=("FROM", "TO"),
         help="Bulk-change PHP-FPM pm.max_children only where its current value exactly equals FROM.",
     )
@@ -354,6 +560,15 @@ def main():
     args = parser.parse_args()
     if args.only_php_cli:
         args.update_php_cli = True
+    if args.update_hit_max_children:
+        from_limit, to_limit = args.update_hit_max_children
+        if from_limit < 1 or to_limit < 1 or from_limit == to_limit:
+            parser.error("Log-based PHP-FPM limits must be positive and different.")
+        args.scan_max_children = True
+        if args.update_pm_max_children or args.update_php_cli or args.only_php_cli or args.list_apps_php:
+            parser.error("--update-hit-max-children cannot be combined with other update or inventory modes.")
+    if args.scan_max_children and (args.update_pm_max_children or args.update_php_cli or args.only_php_cli or args.list_apps_php):
+        parser.error("--scan-max-children cannot be combined with PHP-version, PHP-CLI, or inventory update modes.")
     if args.update_pm_max_children:
         old_children, new_children = args.update_pm_max_children
         if old_children < 1 or new_children < 1:
@@ -446,6 +661,10 @@ def main():
             else:
                 print(f"No webapps found using {args.list_apps_php}.")
             print("App type is inferred from available API metadata and paths; 'Unknown' means the API response did not provide enough clues.")
+            return
+
+        if args.scan_max_children:
+            run_max_children_log_report(token, servers, args)
             return
 
         if args.update_pm_max_children:
