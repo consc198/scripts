@@ -210,6 +210,91 @@ def classify_webapp(app):
 
     return explicit_values[0] if explicit_values else "Unknown"
 
+
+def run_pm_max_children_update(token, servers, args, requested_names):
+    """Preview or update webapps whose current PHP-FPM max children equals a value."""
+    matches = []
+    processed = 0
+    for index, server in enumerate(servers, 1):
+        server_id = server["id"]
+        server_name = server.get("name", str(server_id))
+        print(f"Fetching webapps for server {index}/{len(servers)}: {server_name}...", flush=True)
+        try:
+            apps = get_webapps_with_retry(token, server_id, server_name)
+        except (APIError, ValueError) as exc:
+            print(f"  [ERROR] Could not list webapps: {exc}")
+            continue
+        for app in apps:
+            processed += 1
+            app_name = app.get("name", f"Webapp {app.get('id', '')}")
+            if requested_names is not None and app_name not in requested_names:
+                continue
+            app_id = app.get("id")
+            if app_id is None:
+                print(f"  [SKIP] {server_name} / {app_name}: missing webapp ID")
+                continue
+            try:
+                settings = curl_request(
+                    "GET", f"{BASE_URL}/servers/{server_id}/webapps/{app_id}/settings", token
+                )
+                if not isinstance(settings, dict):
+                    raise APIError("Unexpected webapp settings response.")
+                current = settings.get("processManagerMaxChildren")
+                if current is not None and str(current) == str(args.update_pm_max_children[0]):
+                    matches.append((server, app, settings, current))
+            except APIError as exc:
+                print(f"  [ERROR] Could not read settings for {server_name} / {app_name}: {exc}")
+
+    old_value, new_value = args.update_pm_max_children
+    print(f"\nScanned {processed} webapp(s); found {len(matches)} with pm.max_children={old_value}.")
+    print(f"Target value: {new_value}")
+    print("Mode:", "LIVE CHANGES" if args.apply else "DRY RUN")
+    batch_count = (len(matches) + args.batch_size - 1) // args.batch_size
+    updated = failed = 0
+    for batch_index, offset in enumerate(range(0, len(matches), args.batch_size), 1):
+        batch = matches[offset:offset + args.batch_size]
+        print(f"\nBatch {batch_index}/{batch_count} ({len(batch)} webapp(s))")
+        for server, app, settings, current in batch:
+            server_id = server["id"]
+            app_id = app["id"]
+            server_name = server.get("name", str(server_id))
+            app_name = app.get("name", f"Webapp {app_id}")
+            print(f"  {server_name} / {app_name} (ID {app_id}): {current} -> {new_value}")
+            if not args.apply:
+                continue
+            payload = dict(settings)
+            payload["stack"] = app.get("stack")
+            payload["stackMode"] = app.get("stackMode")
+            if "publicPath" in app:
+                payload["publicPath"] = app.get("publicPath")
+            payload["processManagerMaxChildren"] = new_value
+            try:
+                curl_request(
+                    "PATCH",
+                    f"{BASE_URL}/servers/{server_id}/webapps/{app_id}/settings/fpmnginx",
+                    token,
+                    json_body=payload,
+                )
+                print("    [OK] PHP-FPM settings update request accepted.")
+                updated += 1
+            except APIError as exc:
+                print(f"    [ERROR] PHP-FPM settings update failed: {exc}")
+                failed += 1
+            time.sleep(0.25)
+        if batch_index < batch_count and args.apply:
+            print(f"Batch {batch_index}/{batch_count} complete; pausing 10 minutes before the next batch...")
+            time.sleep(600)
+
+    print("\n--- PHP-FPM max children summary ---")
+    print(f"Webapps scanned: {processed}")
+    print(f"Matching webapps: {len(matches)}")
+    if args.apply:
+        print(f"Accepted update requests: {updated}")
+        print(f"Failures: {failed}")
+    else:
+        print("No changes made. Review the matches, then add --apply to update them.")
+
+
 def show_progress(done, total, label="Processing"):
     """Render a compact terminal progress bar."""
     width = 30
@@ -259,15 +344,27 @@ def main():
         help="List webapps running this PHP version and show their detected app type; makes no changes.",
     )
     parser.add_argument(
+        "--update-pm-max-children", nargs=2, type=int, metavar=("FROM", "TO"),
+        help="Bulk-change PHP-FPM pm.max_children only where its current value exactly equals FROM.",
+    )
+    parser.add_argument(
         "--server-id",
         help="Only process a single server ID (default: all accessible servers).",
     )
     args = parser.parse_args()
     if args.only_php_cli:
         args.update_php_cli = True
+    if args.update_pm_max_children:
+        old_children, new_children = args.update_pm_max_children
+        if old_children < 1 or new_children < 1:
+            parser.error("PHP-FPM max children values must be positive integers.")
+        if old_children == new_children:
+            parser.error("The source and target pm.max_children values must differ.")
+        if args.update_php_cli or args.only_php_cli or args.list_apps_php:
+            parser.error("--update-pm-max-children cannot be combined with PHP-CLI or inventory modes.")
     if args.only_php_cli and args.webapps_file:
         parser.error("--webapps-file cannot be used with --only-php-cli.")
-    if args.list_apps_php and (args.apply or args.update_php_cli or args.only_php_cli or args.webapps_file):
+    if args.list_apps_php and (args.apply or args.update_php_cli or args.only_php_cli or args.webapps_file or args.update_pm_max_children):
         parser.error("--list-apps-php is a read-only inventory mode and cannot be combined with update options or --webapps-file.")
     source_versions = set(args.source_php)
     target_version = args.target_php
@@ -349,6 +446,10 @@ def main():
             else:
                 print(f"No webapps found using {args.list_apps_php}.")
             print("App type is inferred from available API metadata and paths; 'Unknown' means the API response did not provide enough clues.")
+            return
+
+        if args.update_pm_max_children:
+            run_pm_max_children_update(token, servers, args, requested_webapp_names)
             return
 
         print("Mode:", "LIVE CHANGES" if args.apply else "DRY RUN")
