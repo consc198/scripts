@@ -614,9 +614,19 @@ def main():
         print("Fetching server list...", flush=True)
         if args.server_id:
             try:
-                servers = [{"id": int(args.server_id), "name": args.server_id}]
+                selected_server_id = int(args.server_id)
             except ValueError:
                 parser.error("--server-id must be an integer.")
+            if args.scan_max_children:
+                # Log scanning needs the server IP, so retain the full API server record.
+                servers = [
+                    server for server in get_all_pages(token, "/servers")
+                    if int(server.get("id", -1)) == selected_server_id
+                ]
+                if not servers:
+                    parser.error(f"Server ID {args.server_id} was not found in the RunCloud account.")
+            else:
+                servers = [{"id": selected_server_id, "name": args.server_id}]
         else:
             servers = get_all_pages(token, "/servers")
 
