@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
