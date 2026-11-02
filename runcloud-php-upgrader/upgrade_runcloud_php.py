@@ -333,7 +333,7 @@ def scan_server_max_children_logs(server):
         raise RuntimeError(detail[:500])
 
     pattern = re.compile(
-        r"^\\[([^]]+)\\]\\s+WARNING:\\s+\\[pool\\s+([^]]+)\\]\\s+"
+        r"^\[([^]]+)\]\s+WARNING:\s+\[pool\s+([^]]+)\]\s+"
         r"server reached max_children setting\\s+\\((\\d+)\\)"
     )
     hits = []
