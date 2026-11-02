@@ -77,6 +77,14 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Added
 - Include the webapp URL/domain in the read-only PHP-version inventory when the API response provides it.
 
+## [1.9.0] - 2026-11-02
+
+### Added
+- Add `--scan-max-children` to SSH to selected servers and report PHP-FPM log warnings from `/var/log/php*rc-fpm.log`.
+- Group warning reports by server, pool, and current limit, including occurrence counts and latest log timestamps.
+- Add `--update-hit-max-children FROM TO` to target only reported pools at the selected current limit, verify the current RunCloud setting, and optionally apply the new limit with `--apply`.
+- Support server filtering with `--server-id`; skip pools that cannot be confidently matched to a webapp.
+
 ## [1.8.0] - 2026-11-02
 
 ### Added
