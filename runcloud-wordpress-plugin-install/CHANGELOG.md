@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.0] - 2026-11-04
+
+### Changed
+- Switch the default installer archive from Conversal Admin to Events Manager Pro 3.9.6.
+- Pin the Events Manager Pro ZIP to its verified SHA-256 checksum.
+
+### Notes
+- The installer downloads the repository-hosted `events-manager-pro.3.9.6.zip` and verifies its SHA-256 before installing.
+- Live RunCloud and WordPress server testing has not been performed as part of this change.
+
 Notable changes to the RunCloud WordPress Plugin Installer are documented here.
 
 This project uses [Semantic Versioning](https://semver.org/). Release tags use the format `vMAJOR.MINOR.PATCH`.
