@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-**Current script version:** `1.5.2` (Semantic Versioning).
+**Current script version:** `1.6.0` (Semantic Versioning).
 
 Check the installed script version without contacting RunCloud or requiring an API token:
 
@@ -14,7 +14,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 
 ## Script version and releases
 
-The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.5.2**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.6.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
 
 ## What it does
 
@@ -140,6 +140,25 @@ python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordf
 ```
 
 Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before`, `plugin_update_available_version` (when WP-CLI reports one), and `plugin_version_after`. Statuses include `updated`, `already_current`, `not_found`, `would_update`, and `failed`. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
+
+## Update WordPress core to the latest version
+
+Use `--update-core` to update WordPress core to the latest version reported by WP-CLI, but only on sites whose installed core version matches the exact version supplied with `--current-wp-version`. Sites with any other installed version are skipped. The version filter is mandatory to help prevent unintended upgrades across a mixed-version fleet.
+
+```bash
+# Preview core updates only on sites currently running WordPress 6.8.3
+python3 install_runcloud_plugin.py --update-core --current-wp-version 6.8.3 --dry-run
+
+# Perform the update on matching sites
+python3 install_runcloud_plugin.py --update-core --current-wp-version 6.8.3
+
+# Restrict the operation to selected apps
+python3 install_runcloud_plugin.py --server 12345 --webapps-file webapps.txt --update-core --current-wp-version 6.8.3
+```
+
+The script checks the installed version first. A site is eligible only when its numeric version matches the supplied version; eligible sites are checked with `wp core check-update` and updated with `wp core update`. WP-CLI's configured update channel determines the latest available core release. The operation runs as the web app's RunCloud Linux user and skips loading plugins and themes. Dry-run checks the available update and reports the proposed version without changing files.
+
+Results are written to `runcloud-core-update.json` by default, or to the path supplied with `--core-update-output`. Each record includes the version filter, installed version before the operation, available version during dry-run, final installed version when verified, status (`updated`, `already_current`, `version_mismatch`, or `failed`), and message. Core update mode is separate from plugin install/update/removal, discovery, and cache-purge modes.
 
 ## Purge the RunCloud cache
 
