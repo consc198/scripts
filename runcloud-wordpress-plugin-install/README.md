@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-**Current script version:** `1.3.0` (Semantic Versioning).
+**Current script version:** `1.4.0` (Semantic Versioning).
 
 Check the installed script version without contacting RunCloud or requiring an API token:
 
@@ -14,7 +14,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 
 ## Script version and releases
 
-The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.3.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.4.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
 
 ## What it does
 
@@ -27,7 +27,7 @@ The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.3.0*
 6. Installs and activates the plugin:
 
 ```bash
-wp plugin install /tmp/conversal-admin-3.0.4.zip --force --activate --skip-plugins --skip-themes (after download and SHA-256 verification)
+wp plugin install /tmp/events-manager-pro.3.9.6.zip --force --activate --skip-plugins --skip-themes (after download and SHA-256 verification)
 ```
 
 ## Requirements
@@ -191,7 +191,7 @@ A dry run does not install the plugin. With a minimum version specified, it repo
 
 The script prints counts for successful installations, version-based skips, and failures. It writes a JSON report to `runcloud-plugin-install.json` by default and exits with code `2` if any site fails.
 
-The installer downloads `conversal-admin-3.0.4.zip` from this public repository and verifies its pinned SHA-256 checksum before installation. If the downloaded file does not match the expected checksum, installation stops. To update the plugin ZIP, upload the replacement and update `PLUGIN_SHA256` in the script to the replacement file's independently computed SHA-256.
+The installer downloads `events-manager-pro.3.9.6.zip` from this public repository and verifies its pinned SHA-256 checksum before installation. If the downloaded file does not match the expected checksum, installation stops. To update the plugin ZIP, upload the replacement and update `PLUGIN_SHA256` in the script to the replacement file's independently computed SHA-256.
 
 Existing plugin installations are overwritten because `--force` is used. The plugin is activated automatically on sites that meet the version requirement. The install command uses WP-CLI’s `--skip-plugins` flag so existing plugins are not loaded during the install command; this does not mean the newly installed plugin will remain inactive.
 
