@@ -15,7 +15,7 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
 PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
-SCRIPT_VERSION = "1.5.2"
+SCRIPT_VERSION = "1.6.0"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
@@ -211,6 +211,48 @@ def update_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
     return status, message, matched_plugin, installed_before, available_version, installed_after
 
 
+
+def update_wordpress_core(server, webapp, webapp_user, expected_version, dry_run):
+    """Update core only when the installed version matches the requested version."""
+    host, root = server.get("ipAddress"), webapp.get("rootPath")
+    if not host: return "failed", "No server IP address", None, None
+    if not root: return "failed", "No web-app rootPath", None, None
+    label=f"{server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}"
+    try:
+        before=run_as_webapp_user(host, webapp_user, root, "core version --skip-plugins --skip-themes")
+    except Exception as exc:
+        return "failed", f"Could not determine installed WordPress core version: {exc}", None, None
+    if version_tuple(before) != version_tuple(expected_version):
+        msg=f"Skipped: installed WordPress version {before} does not match requested version {expected_version}"
+        print(f"[VERSION MISMATCH] {label}: {msg}")
+        return "version_mismatch", msg, before, None
+    try:
+        raw=run_as_webapp_user(host, webapp_user, root, "core check-update --format=json --skip-plugins --skip-themes")
+        updates=json.loads(raw or "[]")
+        if isinstance(updates, dict): updates=[updates]
+        if not isinstance(updates, list): raise RuntimeError("Unexpected WP-CLI core check-update JSON")
+        latest=next((x.get("version") for x in updates if isinstance(x,dict) and x.get("version")),None)
+    except Exception as exc:
+        return "failed", f"Could not check for WordPress core updates: {exc}", before, None
+    if not latest:
+        print(f"[CURRENT] {label}: WordPress {before}")
+        return "already_current", "No WordPress core update is available", before, before
+    if dry_run:
+        print(f"[DRY-RUN] Would update WordPress core on {label}: {before} -> {latest}")
+        return "would_update", "Update available; dry-run did not change WordPress core", before, latest
+    try:
+        output=run_as_webapp_user(host, webapp_user, root, "core update --skip-plugins --skip-themes")
+        after=run_as_webapp_user(host, webapp_user, root, "core version --skip-plugins --skip-themes")
+    except Exception as exc:
+        return "failed", f"WordPress core update or version verification failed: {exc}", before, latest
+    if version_tuple(after) > version_tuple(before):
+        print(f"[UPDATED] {label}: WordPress {before} -> {after}")
+        return "updated", output or f"WordPress core updated to {after}", before, after
+    if version_tuple(after) == version_tuple(before):
+        return "already_current", output or "No WordPress core version change was detected", before, after
+    return "failed", f"Unexpected core version downgrade detected: {before} -> {after}", before, after
+
+
 def discover_plugin(server, webapp, webapp_user, plugin_slug):
     """Check whether a plugin is installed and return its exact WP-CLI plugin file path."""
     host = server.get("ipAddress")
@@ -389,17 +431,29 @@ def main():
     parser.add_argument("--removal-output", default="runcloud-plugin-removal.json", help="JSON report path for --remove-plugin mode.")
     parser.add_argument("--update-plugin", action="append", metavar="PLUGIN", help="Update this installed plugin to the latest available version on selected WordPress apps. Repeat to update multiple plugins; writes a separate JSON report.")
     parser.add_argument("--update-output", default="runcloud-plugin-update.json", help="JSON report path for --update-plugin mode.")
+    parser.add_argument("--update-core", action="store_true", help="Update WordPress core to the latest available version only when it matches --current-wp-version.")
+    parser.add_argument("--current-wp-version", help="Required installed WordPress version filter for --update-core (e.g. 6.8.3).")
+    parser.add_argument("--core-update-output", default="runcloud-core-update.json", help="JSON report path for --update-core mode.")
     parser.add_argument("--purge-runcache", action="store_true", help="Purge the RunCloud cache on selected WordPress apps using WP-CLI.")
     parser.add_argument("--purge-output", default="runcloud-cache-purge.json", help="JSON report path for --purge-runcache mode.")
     parser.add_argument("--token", help="RunCloud API token (overrides environment variable and token.txt).")
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
 
-    operation_modes = sum(bool(value) for value in (args.find_plugin, args.remove_plugin, args.update_plugin, args.purge_runcache))
+    operation_modes = sum(bool(value) for value in (args.find_plugin, args.remove_plugin, args.update_plugin, args.purge_runcache, args.update_core))
     if operation_modes > 1:
-        parser.error("--find-plugin, --remove-plugin, --update-plugin, and --purge-runcache are separate modes and cannot be used together.")
-    if (args.find_plugin or args.remove_plugin or args.update_plugin or args.purge_runcache) and args.min_wp_version:
-        parser.error("--min-wp-version applies to installation mode and cannot be combined with --find-plugin, --remove-plugin, --update-plugin, or --purge-runcache.")
+        parser.error("--find-plugin, --remove-plugin, --update-plugin, --purge-runcache, and --update-core are separate modes and cannot be used together.")
+    if args.update_core and not args.current_wp_version:
+        parser.error("--update-core requires --current-wp-version.")
+    if args.current_wp_version and not args.update_core:
+        parser.error("--current-wp-version can only be used with --update-core.")
+    if args.update_core:
+        try:
+            version_tuple(args.current_wp_version)
+        except ValueError as exc:
+            parser.error(str(exc))
+    if (args.find_plugin or args.remove_plugin or args.update_plugin or args.purge_runcache or args.update_core) and args.min_wp_version:
+        parser.error("--min-wp-version applies to installation mode and cannot be combined with --find-plugin, --remove-plugin, --update-plugin, --purge-runcache, or --update-core.")
     if args.min_wp_version:
         try:
             version_tuple(args.min_wp_version)
@@ -645,6 +699,25 @@ def main():
                         "status": status,
                         "message": message,
                     })
+            elif args.update_core:
+                before = after = None
+                try:
+                    status, message, before, after = update_wordpress_core(server, app, webapp_user, args.current_wp_version, args.dry_run)
+                except Exception as exc:
+                    status, message = "failed", str(exc)
+                    print(f"  FAILED updating WordPress core: {message}", file=sys.stderr)
+                results.append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "server_id": server_id, "server": server_name, "server_ip": server.get("ipAddress"),
+                    "webapp_id": app.get("id"), "webapp": app.get("name"),
+                    "server_user_id": app.get("server_user_id"), "ssh_user": SSH_USER,
+                    "run_as_user": webapp_user, "rootPath": app.get("rootPath"),
+                    "operation": "update_core", "current_wp_version_filter": args.current_wp_version,
+                    "wordpress_version_before": before,
+                    "wordpress_update_available_version": after if status == "would_update" else None,
+                    "wordpress_version_after": after if status in {"updated", "already_current"} else None,
+                    "status": status, "message": message,
+                })
             elif args.purge_runcache:
                 try:
                     status, message = purge_runcloud_cache(server, app, webapp_user, args.dry_run)
@@ -700,7 +773,7 @@ def main():
 
     for entry in results:
         entry.setdefault("script_version", SCRIPT_VERSION)
-    report_path = args.discovery_output if args.find_plugin else (args.removal_output if args.remove_plugin else (args.update_output if args.update_plugin else (args.purge_output if args.purge_runcache else args.output)))
+    report_path = args.discovery_output if args.find_plugin else (args.removal_output if args.remove_plugin else (args.update_output if args.update_plugin else (args.purge_output if args.purge_runcache else (args.core_update_output if args.update_core else args.output))))
     for record in results:
         record["script_version"] = SCRIPT_VERSION
     Path(report_path).expanduser().write_text(json.dumps(results, indent=2), encoding="utf-8")
@@ -734,6 +807,20 @@ def main():
         print(f"Already current:          {already_current}")
         print(f"Not installed:            {not_found}")
         print(f"Would update (dry-run):   {would_update}")
+    elif args.update_core:
+        updated=sum(r.get("status")=="updated" for r in results)
+        current=sum(r.get("status")=="already_current" for r in results)
+        mismatch=sum(r.get("status")=="version_mismatch" for r in results)
+        preview=sum(r.get("status")=="would_update" for r in results)
+        print("RUNCloud WORDPRESS CORE UPDATE REPORT")
+        print("=" * 72)
+        print(f"Required current version: {args.current_wp_version}")
+        print(f"Servers processed:        {len(servers)}")
+        print(f"WordPress sites checked:  {wordpress_count}")
+        print(f"Updated:                  {updated}")
+        print(f"Already current:          {current}")
+        print(f"Version mismatch:         {mismatch}")
+        print(f"Would update (dry-run):   {preview}")
     elif args.purge_runcache:
         purged = sum(r.get("status") == "purged" for r in results)
         would_purge = sum(r.get("status") == "would_purge" for r in results)
