@@ -13,9 +13,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
-PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/conversal-admin-3.0.4.zip"
-PLUGIN_SHA256 = "1e2e98cbcd8fa20da8f996f82f91ca58feac210e434461f1c2b01cdd7c003ff6"
-SCRIPT_VERSION = "1.3.0"
+PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
+PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
+SCRIPT_VERSION = "1.4.0"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
