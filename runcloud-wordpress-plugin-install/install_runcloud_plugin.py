@@ -376,7 +376,7 @@ def install_plugin(server, webapp, webapp_user, dry_run, minimum_version=None):
 def main():
     parser = argparse.ArgumentParser(description="Discover RunCloud WordPress sites and force-install + activate a plugin ZIP via root SSH.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {SCRIPT_VERSION}")
-    parser.add_argument("--dry-run", action="store_true", help="Discover sites without executing WP-CLI.")
+    parser.add_argument("--dry-run", action="store_true", help="Preview changes; read-only checks still run, but no install, update, removal, or purge is performed.")
     parser.add_argument("--server", help="RunCloud server ID or exact server name. Omit to process all servers.")
     parser.add_argument("--webapp", action="append", help="Target a WordPress web app by RunCloud web app ID or exact name. May be repeated; names must match uniquely.")
     parser.add_argument("--webapps-file", help="Text file containing target web app IDs or exact names, one per line. Blank lines and lines starting with # are ignored.")
@@ -404,8 +404,15 @@ def main():
             version_tuple(args.min_wp_version)
         except ValueError as exc:
             parser.error(str(exc))
-    if args.find_plugin and args.webapps_file and Path(args.discovery_webapps_output).expanduser().resolve() == Path(args.webapps_file).expanduser().resolve():
-        parser.error("--discovery-webapps-output must not overwrite the --webapps-file input.")
+    if args.find_plugin:
+        output_paths = {
+            Path(args.discovery_output).expanduser().resolve(),
+            Path(args.discovery_webapps_output).expanduser().resolve(),
+        }
+        if len(output_paths) != 2:
+            parser.error("--discovery-output and --discovery-webapps-output must be different files.")
+        if args.webapps_file and Path(args.discovery_webapps_output).expanduser().resolve() == Path(args.webapps_file).expanduser().resolve():
+            parser.error("--discovery-webapps-output must not overwrite the --webapps-file input.")
     token = args.token or os.getenv("RUNCloud_API_TOKEN")
     if not token:
         token_file = Path(__file__).resolve().with_name("token.txt")
@@ -705,7 +712,7 @@ def main():
     report_path = args.discovery_output if args.find_plugin else (args.removal_output if args.remove_plugin else (args.update_output if args.update_plugin else (args.purge_output if args.purge_runcache else args.output)))
     for record in results:
         record["script_version"] = SCRIPT_VERSION
-    Path(report_path).write_text(json.dumps(results, indent=2), encoding="utf-8")
+    Path(report_path).expanduser().write_text(json.dumps(results, indent=2), encoding="utf-8")
     if args.find_plugin:
         matching_ids = sorted({str(r["webapp_id"]) for r in results if r.get("status") == "found" and r.get("webapp_id") is not None})
         Path(args.discovery_webapps_output).expanduser().write_text(("\n".join(matching_ids) + "\n") if matching_ids else "", encoding="utf-8")
