@@ -4,6 +4,17 @@ Notable changes to the RunCloud WordPress Plugin Installer are documented here.
 
 This project uses [Semantic Versioning](https://semver.org/). Release tags use the format `vMAJOR.MINOR.PATCH`.
 
+## [1.3.0] - 2026-11-04
+
+### Added
+- Add read-only `--find-plugin` mode to scan selected WordPress apps for an installed plugin.
+- Export matching web-app IDs to `webapps.txt` for reuse with `--webapps-file`.
+- Add dedicated JSON discovery reporting and configurable output paths.
+
+### Notes
+- Discovery uses WP-CLI as each app's RunCloud Linux user and records found, not-found, and failed results.
+- Discovery does not modify WordPress sites. Live RunCloud and WordPress server testing has not been performed as part of this change.
+
 ## [1.2.0] - 2026-10-23
 
 ### Added
