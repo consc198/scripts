@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.0] - 2026-11-04
+
+### Added
+- Add `--update-core` to update WordPress core to the latest version available through WP-CLI.
+- Require `--current-wp-version` and update only sites whose installed core version matches the supplied version.
+- Add dry-run preview, before/after version reporting, and a dedicated `runcloud-core-update.json` report.
+
+### Notes
+- Core updates run as the WordPress app's RunCloud Linux user with plugins and themes skipped during WP-CLI execution.
+- Live RunCloud API and WordPress server testing has not been performed as part of this change.
+
 ## [1.5.2] - 2026-11-04
 
 ### Fixed
