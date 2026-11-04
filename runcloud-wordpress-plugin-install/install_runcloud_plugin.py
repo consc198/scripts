@@ -15,7 +15,7 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
 PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
-SCRIPT_VERSION = "1.5.0"
+SCRIPT_VERSION = "1.5.1"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
@@ -40,7 +40,8 @@ def api_get(token, path, params=None):
     cmd.append(url)
     result = subprocess.run(cmd, text=True, capture_output=True)
     if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or f"curl exit code {result.returncode}"
+        details = [part for part in (result.stderr.strip(), result.stdout.strip()) if part]
+        detail = " | ".join(details) or f"curl exit code {result.returncode}"
         raise RuntimeError(f"RunCloud API request failed: {detail}")
     try:
         return json.loads(result.stdout)
@@ -480,10 +481,15 @@ def main():
         for target in dict.fromkeys(target_names):
             found = None
             non_wordpress = False
+            lookup_errors = []
+            checked_server_ids = []
             for server in servers:
+                server_id = server["id"]
+                checked_server_ids.append(str(server_id))
                 try:
-                    app = get_webapp_by_id(token, server["id"], target)
-                except Exception:
+                    app = get_webapp_by_id(token, server_id, target)
+                except Exception as exc:
+                    lookup_errors.append(f"server {server_id}: {exc}")
                     continue
                 if app.get("type") != "wordpress":
                     non_wordpress = True
@@ -494,14 +500,17 @@ def main():
                 server, app = found
                 matched_by_identity[(str(server["id"]), str(app.get("id")))] = (server, app)
             else:
-                unresolved.append((target, non_wordpress))
+                unresolved.append((target, non_wordpress, checked_server_ids, lookup_errors))
 
         if unresolved:
             print("Could not resolve these IDs as WordPress web apps:")
-            for target, non_wordpress in unresolved:
+            for target, non_wordpress, checked_server_ids, lookup_errors in unresolved:
                 suffix = " (the ID belongs to a non-WordPress web app)" if non_wordpress else ""
                 print(f"  {target}{suffix}")
-            print("Check the IDs and, if --server was supplied, confirm they belong to that server.")
+                if lookup_errors:
+                    print(f"    Checked server IDs: {', '.join(checked_server_ids)}")
+                    print(f"    Last API error: {lookup_errors[-1]}")
+            print("If the API errors are 404 responses, the web-app ID was not found on the listed servers. If they are 401/403 or another error, check API permissions or the endpoint response.")
             sys.exit(1)
 
         for server, app in matched_by_identity.values():
