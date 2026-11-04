@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.0] - 2026-11-04
+
+### Changed
+- Resolve numeric web-app IDs through RunCloud's single-web-app endpoint instead of listing all web apps on every server.
+- Keep exact-name target resolution and all-server discovery behavior unchanged.
+
+### Notes
+- ID resolution still retrieves the server list and probes the per-server web-app object endpoint until each ID is found.
+- Live RunCloud API and WordPress server testing has not been performed as part of this change.
+
 ## [1.4.0] - 2026-11-04
 
 ### Changed
