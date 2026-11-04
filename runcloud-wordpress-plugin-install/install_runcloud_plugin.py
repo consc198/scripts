@@ -15,7 +15,7 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/conversal-admin-3.0.4.zip"
 PLUGIN_SHA256 = "1e2e98cbcd8fa20da8f996f82f91ca58feac210e434461f1c2b01cdd7c003ff6"
-SCRIPT_VERSION = "1.2.0"
+SCRIPT_VERSION = "1.3.0"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
@@ -210,6 +210,32 @@ def update_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
     return status, message, matched_plugin, installed_before, available_version, installed_after
 
 
+def discover_plugin(server, webapp, webapp_user, plugin_slug):
+    """Check whether a plugin is installed and return its exact WP-CLI plugin file path."""
+    host = server.get("ipAddress")
+    root_path = webapp.get("rootPath")
+    if not host:
+        return "failed", "No server IP address", None, None
+    if not root_path:
+        return "failed", "No web-app rootPath", None, None
+    try:
+        records = get_plugin_records(host, webapp_user, root_path)
+    except Exception as exc:
+        return "failed", f"Could not list installed plugins: {exc}", None, None
+    matched = next((
+        (record for record in records
+         if record.get("name") == plugin_slug
+         or ("/" not in plugin_slug and str(record.get("name", "")).split("/", 1)[0] == plugin_slug)),
+        None,
+    )
+    if not matched:
+        print(f"[NOT FOUND] {server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}: {plugin_slug}")
+        return "not_found", "Plugin is not installed", None, None
+    matched_name = matched.get("name")
+    installed_version = matched.get("version")
+    print(f"[FOUND] {server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}: {matched_name} {installed_version or '(version unknown)'}")
+    return "found", "Plugin is installed", matched_name, installed_version
+
 def remove_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
     """Remove a plugin if it is installed, returning a reportable status."""
     host = server.get("ipAddress")
@@ -353,6 +379,9 @@ def main():
     parser.add_argument("--webapp", action="append", help="Target a WordPress web app by RunCloud web app ID or exact name. May be repeated; names must match uniquely.")
     parser.add_argument("--webapps-file", help="Text file containing target web app IDs or exact names, one per line. Blank lines and lines starting with # are ignored.")
     parser.add_argument("--min-wp-version", help="Minimum WordPress version required for installation (e.g. 6.4.2). Older sites are skipped.")
+    parser.add_argument("--find-plugin", metavar="PLUGIN", help="Scan selected WordPress apps for this installed plugin and export matching web-app IDs. Read-only.")
+    parser.add_argument("--discovery-output", default="runcloud-plugin-discovery.json", help="JSON report path for --find-plugin mode.")
+    parser.add_argument("--discovery-webapps-output", default="webapps.txt", help="Text file of matching web-app IDs for --find-plugin mode.")
     parser.add_argument("--remove-plugin", action="append", metavar="PLUGIN", help="Find and uninstall this plugin from selected WordPress apps (plugin slug or plugin file path). Repeat to remove multiple plugins; writes a separate JSON report.")
     parser.add_argument("--removal-output", default="runcloud-plugin-removal.json", help="JSON report path for --remove-plugin mode.")
     parser.add_argument("--update-plugin", action="append", metavar="PLUGIN", help="Update this installed plugin to the latest available version on selected WordPress apps. Repeat to update multiple plugins; writes a separate JSON report.")
@@ -363,16 +392,18 @@ def main():
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
 
-    operation_modes = sum(bool(value) for value in (args.remove_plugin, args.update_plugin, args.purge_runcache))
+    operation_modes = sum(bool(value) for value in (args.find_plugin, args.remove_plugin, args.update_plugin, args.purge_runcache))
     if operation_modes > 1:
-        parser.error("--remove-plugin, --update-plugin, and --purge-runcache are separate modes and cannot be used together.")
-    if (args.remove_plugin or args.update_plugin or args.purge_runcache) and args.min_wp_version:
-        parser.error("--min-wp-version applies to installation mode and cannot be combined with --remove-plugin, --update-plugin, or --purge-runcache.")
+        parser.error("--find-plugin, --remove-plugin, --update-plugin, and --purge-runcache are separate modes and cannot be used together.")
+    if (args.find_plugin or args.remove_plugin or args.update_plugin or args.purge_runcache) and args.min_wp_version:
+        parser.error("--min-wp-version applies to installation mode and cannot be combined with --find-plugin, --remove-plugin, --update-plugin, or --purge-runcache.")
     if args.min_wp_version:
         try:
             version_tuple(args.min_wp_version)
         except ValueError as exc:
             parser.error(str(exc))
+    if args.find_plugin and args.webapps_file and Path(args.discovery_webapps_output).expanduser().resolve() == Path(args.webapps_file).expanduser().resolve():
+        parser.error("--discovery-webapps-output must not overwrite the --webapps-file input.")
     token = args.token or os.getenv("RUNCloud_API_TOKEN")
     if not token:
         token_file = Path(__file__).resolve().with_name("token.txt")
@@ -513,7 +544,7 @@ def main():
             try:
                 webapp_user = get_webapp_ssh_user(token, server_id, app)
             except Exception as exc:
-                requested_plugins = (args.remove_plugin or args.update_plugin) if (args.remove_plugin or args.update_plugin) else [None]
+                requested_plugins = ([args.find_plugin] if args.find_plugin else (args.remove_plugin or args.update_plugin)) if (args.find_plugin or args.remove_plugin or args.update_plugin) else [None]
                 if args.purge_runcache:
                     requested_plugins = [None]
                 for plugin_requested in requested_plugins:
@@ -538,7 +569,22 @@ def main():
                 print(f"  FAILED: {exc}", file=sys.stderr)
                 continue
 
-            if args.remove_plugin:
+            if args.find_plugin:
+                try:
+                    status, message, matched_plugin, installed_version = discover_plugin(server, app, webapp_user, args.find_plugin)
+                except Exception as exc:
+                    status, message, matched_plugin, installed_version = "failed", str(exc), None, None
+                    print(f"  FAILED discovering {args.find_plugin}: {message}", file=sys.stderr)
+                results.append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "server_id": server_id, "server": server_name, "server_ip": server.get("ipAddress"),
+                    "webapp_id": app.get("id"), "webapp": app.get("name"),
+                    "server_user_id": app.get("server_user_id"), "ssh_user": SSH_USER,
+                    "run_as_user": webapp_user, "rootPath": app.get("rootPath"),
+                    "plugin_requested": args.find_plugin, "plugin_matched": matched_plugin,
+                    "plugin_version": installed_version, "status": status, "message": message,
+                })
+            elif args.remove_plugin:
                 for plugin_requested in args.remove_plugin:
                     matched_plugin = None
                     try:
@@ -654,14 +700,27 @@ def main():
 
     for entry in results:
         entry.setdefault("script_version", SCRIPT_VERSION)
-    report_path = args.removal_output if args.remove_plugin else (args.update_output if args.update_plugin else (args.purge_output if args.purge_runcache else args.output))
+    report_path = args.discovery_output if args.find_plugin else (args.removal_output if args.remove_plugin else (args.update_output if args.update_plugin else (args.purge_output if args.purge_runcache else args.output)))
     for record in results:
         record["script_version"] = SCRIPT_VERSION
     Path(report_path).write_text(json.dumps(results, indent=2), encoding="utf-8")
+    if args.find_plugin:
+        matching_ids = sorted({str(r["webapp_id"]) for r in results if r.get("status") == "found" and r.get("webapp_id") is not None})
+        Path(args.discovery_webapps_output).expanduser().write_text(("\n".join(matching_ids) + "\n") if matching_ids else "", encoding="utf-8")
     failures = [r for r in results if r.get("status") == "failed"]
 
     print("\n" + "=" * 72)
-    if args.update_plugin:
+    if args.find_plugin:
+        found = sum(r.get("status") == "found" for r in results)
+        not_found = sum(r.get("status") == "not_found" for r in results)
+        print("RUNCloud WORDPRESS PLUGIN DISCOVERY REPORT")
+        print("=" * 72)
+        print(f"Plugin requested:          {args.find_plugin}")
+        print(f"WordPress sites checked:  {wordpress_count}")
+        print(f"Sites with plugin:         {found}")
+        print(f"Sites without plugin:      {not_found}")
+        print(f"Matching web-app IDs:      {args.discovery_webapps_output}")
+    elif args.update_plugin:
         updated = sum(r.get("status") == "updated" for r in results)
         already_current = sum(r.get("status") == "already_current" for r in results)
         not_found = sum(r.get("status") == "not_found" for r in results)
