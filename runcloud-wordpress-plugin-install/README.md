@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-**Current script version:** `1.4.0` (Semantic Versioning).
+**Current script version:** `1.5.0` (Semantic Versioning).
 
 Check the installed script version without contacting RunCloud or requiring an API token:
 
@@ -14,7 +14,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 
 ## Script version and releases
 
-The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.4.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.5.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
 
 ## What it does
 
@@ -88,6 +88,8 @@ Example `webapps.txt`:
 67891
 example.com
 ```
+
+When every supplied target is a numeric web-app ID (including IDs loaded from `webapps.txt`), the script resolves each ID through RunCloud's single-web-app API endpoint. It still retrieves the server list to determine which server owns each app, but it does **not** enumerate every server's web apps. Exact-name targets retain the full listing-and-match behavior.
 
 The script resolves all requested targets before installing anything. If an entry cannot be found or matches multiple sites, it stops and lists available WordPress web apps; use unique IDs to avoid ambiguity. When `--server` is supplied, targets are resolved only on that server. If no target option is supplied, the script retains its default behavior of processing all WordPress web apps on the selected server(s).
 
