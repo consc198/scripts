@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.1] - 2026-11-04
+
+### Fixed
+- Include both stderr and response-body details in RunCloud API errors.
+- Show the server IDs checked and the last API error when a numeric web-app ID cannot be resolved.
+
+### Notes
+- This is a diagnostic improvement to help distinguish an ID/server mismatch from API permission or endpoint errors.
+- Live RunCloud API testing has not been performed as part of this change.
+
 ## [1.5.0] - 2026-11-04
 
 ### Changed
