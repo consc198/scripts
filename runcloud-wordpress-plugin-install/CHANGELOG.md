@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.2] - 2026-11-04
+
+### Fixed
+- Resolve numeric web-app IDs by listing web apps per server once and matching IDs against those records.
+- Remove the per-ID/per-server endpoint probing that generated hundreds of API requests and triggered Cloudflare 429 challenges.
+- Keep exact-name and numeric-ID targeting on the same server-scoped resolution path.
+
+### Notes
+- Targeted resolution still retrieves server web-app lists, but does so once per server with the existing retry behavior.
+- Live RunCloud API and WordPress server testing has not been performed as part of this change.
+
+
 ## [1.5.1] - 2026-11-04
 
 ### Fixed
