@@ -222,10 +222,12 @@ def discover_plugin(server, webapp, webapp_user, plugin_slug):
         records = get_plugin_records(host, webapp_user, root_path)
     except Exception as exc:
         return "failed", f"Could not list installed plugins: {exc}", None, None
-    matched = next((
-        (record for record in records
-         if record.get("name") == plugin_slug
-         or ("/" not in plugin_slug and str(record.get("name", "")).split("/", 1)[0] == plugin_slug)),
+    matched = next(
+        (
+            record for record in records
+            if record.get("name") == plugin_slug
+            or ("/" not in plugin_slug and str(record.get("name", "")).split("/", 1)[0] == plugin_slug)
+        ),
         None,
     )
     if not matched:
