@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-**Current script version:** `1.2.0` (Semantic Versioning).
+**Current script version:** `1.3.0` (Semantic Versioning).
 
 Check the installed script version without contacting RunCloud or requiring an API token:
 
@@ -14,7 +14,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 
 ## Script version and releases
 
-The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.2.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.3.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
 
 ## What it does
 
@@ -101,6 +101,23 @@ python3 install_runcloud_plugin.py --server 12345 --min-wp-version 6.4.2 --dry-r
 ```
 
 Version comparison is numeric, so `6.10` is newer than `6.9`. If the script cannot determine a site's WordPress version when a minimum is set, it fails that site safely rather than installing the plugin without checking.
+
+## Discover sites that have a plugin installed
+
+Use `--find-plugin` to scan the selected WordPress apps for a plugin without changing any site. By default, it scans all servers and exports the matching RunCloud web-app IDs to `webapps.txt`. It also writes a detailed JSON report to `runcloud-plugin-discovery.json`. You can supply a plugin slug (for example, `events-manager-pro`) or its plugin file path (for example, `events-manager-pro/events-manager-pro.php`).
+
+```bash
+# Find every WordPress app with Events Manager Pro installed
+python3 install_runcloud_plugin.py --find-plugin events-manager-pro
+
+# Restrict discovery to one RunCloud server
+python3 install_runcloud_plugin.py --server 12345 --find-plugin events-manager-pro
+
+# Use the matching app IDs for a later operation
+python3 install_runcloud_plugin.py --webapps-file webapps.txt --update-plugin events-manager-pro
+```
+
+The text export contains only the matching web-app IDs, one per line, so it can be passed directly to `--webapps-file`. Use `--discovery-webapps-output` and `--discovery-output` to choose different output paths. The discovery report records each app as `found`, `not_found`, or `failed`, along with its installed plugin file path and version when available. Discovery runs WP-CLI's plugin listing command as the app's RunCloud Linux user; it does not install, update, activate, or remove plugins.
 
 ## Update a plugin to its latest version
 
