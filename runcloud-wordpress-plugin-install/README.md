@@ -142,7 +142,23 @@ python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordf
 python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordfence --dry-run
 ```
 
-Use `--workers 1` for sequential processing, or set a higher value such as `--workers 20` if the servers can handle the additional load. The worker limit applies globally across the selected web apps. Each web app uses one WP-CLI plugin-list call before the update, one batch `wp plugin update` command for all matching requested plugins, and one plugin-list call afterward to verify versions. Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before`, `plugin_update_available_version` (when WP-CLI reports one), and `plugin_version_after`. Statuses include `updated`, `already_current`, `not_found`, `would_update`, and `failed`. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
+Use `--workers 1` for sequential processing, or set a higher value such as `--workers 20` if the servers can handle the additional load. The worker limit applies globally across the selected web apps. Each web app uses one WP-CLI plugin-list call before the update, one batch `wp plugin update` command for all matching requested plugins, and one plugin-list call afterward to verify versions. Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. Every verified successful update is also appended to `plugin-update-history.txt` beside the script. This separate, append-only tab-separated audit log preserves entries across runs. Each row records the UTC timestamp, server and web-app IDs, server name, site domain, plugin file, and versions before and after the update. Dry-runs, failures, excluded plugins, and plugins already current are not logged. Use `--update-history-file` to choose another location. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before`, `plugin_update_available_version` (when WP-CLI reports one), and `plugin_version_after`. Statuses include `updated`, `already_current`, `not_found`, `would_update`, and `failed`. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
+
+
+### Successful plugin update history
+
+The script automatically appends each verified successful plugin update to `plugin-update-history.txt` in the script directory. The file is tab-separated and has a header row. Each plugin/site update is a separate row with an ISO 8601 UTC timestamp and the old and new plugin versions. It is append-only; previous entries are not replaced.
+
+```bash
+# Use the default history file
+python3 install_runcloud_plugin.py --update-plugin akismet
+
+# Write history to a chosen file
+python3 install_runcloud_plugin.py --update-plugin akismet --update-history-file /var/log/runcloud-plugin-update-history.txt
+```
+
+The history file is local operational data and is ignored by Git. Back it up separately for long-term retention. If the file cannot be written, the script reports an error after saving the JSON update report.
+
 
 ## Permanently exclude specific plugin updates
 
