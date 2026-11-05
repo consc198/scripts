@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.8.0] - 2026-11-05
+
+### Added
+- Add an optional persistent `plugin-exclusions.txt` file for per-webapp, per-domain, per-plugin update exclusions.
+- Add `--exclusions-file` to select an alternate exclusions file.
+- Skip excluded plugin/site combinations before WP-CLI update work and report them as `excluded`.
+- Apply exclusions to dry-runs and leave non-excluded plugins eligible for batched updates.
+
+### Notes
+- Exclusion rows use three tab-separated fields: RunCloud web-app ID, domain, and plugin slug or plugin file path.
+- The default local exclusions file is gitignored; a tracked example template documents the format.
+- Live RunCloud API and WordPress server testing has not been performed as part of this change.
+
 ## [1.7.0] - 2026-11-05
 
 ### Added
