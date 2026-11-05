@@ -288,7 +288,7 @@ def append_plugin_update_history(results, output_path):
         path.parent.mkdir(parents=True, exist_ok=True)
         needs_header = not path.exists() or path.stat().st_size == 0
         with path.open("a", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\\t", lineterminator="\\n")
+            writer = csv.DictWriter(handle, fieldnames=fields, delimiter=chr(9), lineterminator=chr(10))
             if needs_header:
                 writer.writeheader()
             for row in entries:
