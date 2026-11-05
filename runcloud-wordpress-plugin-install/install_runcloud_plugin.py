@@ -16,7 +16,7 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
 PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
-SCRIPT_VERSION = "1.7.0"
+SCRIPT_VERSION = "1.8.0"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
@@ -136,7 +136,58 @@ def get_plugin_records(host, webapp_user, root_path):
     return records
 
 
-def update_plugins_batch(server, webapp, webapp_user, requested_plugins, dry_run):
+def normalize_exclusion_domain(value):
+    """Normalize a domain for stable, case-insensitive exclusion matching."""
+    value = str(value or "").strip().lower()
+    value = re.sub(r"^https?://", "", value)
+    value = value.split("/", 1)[0].split(":", 1)[0]
+    if value.startswith("www."):
+        value = value[4:]
+    return value.rstrip(".")
+
+
+def load_plugin_exclusions(path):
+    """Read tab-separated webapp ID, domain, plugin exclusions."""
+    exclusions = set()
+    if not path.exists():
+        return exclusions
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError as exc:
+        raise ValueError(f"Could not read plugin exclusions file {path}: {exc}") from exc
+    for line_number, raw_line in enumerate(lines, 1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = [field.strip() for field in raw_line.split("\\t")]
+        if len(fields) != 3 or not all(fields):
+            raise ValueError(
+                f"Invalid exclusion at {path}:{line_number}. "
+                "Expected three tab-separated fields: webapp_id, domain, plugin."
+            )
+        webapp_id, domain, plugin = fields
+        exclusions.add((str(webapp_id), normalize_exclusion_domain(domain), plugin.casefold()))
+    return exclusions
+
+
+def plugin_is_excluded(webapp, requested_plugin, exclusions):
+    """Return true only when webapp ID, domain, and requested plugin all match."""
+    webapp_id = str(webapp.get("id", ""))
+    domains = {
+        normalize_exclusion_domain(webapp.get("name")),
+        normalize_exclusion_domain(webapp.get("domain")),
+    }
+    domains.discard("")
+    plugin = str(requested_plugin).casefold()
+    return any(
+        excluded_id == webapp_id and excluded_domain in domains
+        and (excluded_plugin == plugin
+             or ("/" not in requested_plugin and excluded_plugin.split("/", 1)[0] == plugin))
+        for excluded_id, excluded_domain, excluded_plugin in exclusions
+    )
+
+
+def update_plugins_batch(server, webapp, webapp_user, requested_plugins, dry_run, exclusions):
     """Check and update all requested plugins with one WP-CLI update command."""
     host, root_path = server.get("ipAddress"), webapp.get("rootPath")
     if not host or not root_path:
@@ -154,6 +205,13 @@ def update_plugins_batch(server, webapp, webapp_user, requested_plugins, dry_run
 
     rows, matched = [], []
     for requested in requested_plugins:
+        if plugin_is_excluded(webapp, requested, exclusions):
+            rows.append({"plugin_requested": requested, "plugin_matched": None,
+                         "plugin_version_before": None, "plugin_update_available_version": None,
+                         "plugin_version_after": None, "status": "excluded",
+                         "message": "Skipped by persistent plugin exclusion list"})
+            print(f"[EXCLUDED] {server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}: {requested}")
+            continue
         record = next((r for r in records if r.get("name") == requested or
                        ("/" not in requested and str(r.get("name", "")).split("/", 1)[0] == requested)), None)
         if not record:
@@ -217,7 +275,7 @@ def update_plugins_batch(server, webapp, webapp_user, requested_plugins, dry_run
     return rows
 
 
-def update_plugins_for_webapp(token, server, app, requested_plugins, dry_run):
+def update_plugins_for_webapp(token, server, app, requested_plugins, dry_run, exclusions):
     """Resolve the app user and update requested plugins; return JSON-ready rows."""
     server_id = server["id"]
     base = {"timestamp": datetime.now(timezone.utc).isoformat(), "server_id": server_id,
@@ -233,7 +291,7 @@ def update_plugins_for_webapp(token, server, app, requested_plugins, dry_run):
                  "plugin_version_before": None, "plugin_update_available_version": None,
                  "plugin_version_after": None, "status": "failed", "message": str(exc)} for p in requested_plugins]
     try:
-        rows = update_plugins_batch(server, app, user, requested_plugins, dry_run)
+        rows = update_plugins_batch(server, app, user, requested_plugins, dry_run, exclusions)
     except Exception as exc:
         rows = [{"plugin_requested": p, "plugin_matched": None, "plugin_version_before": None,
                  "plugin_update_available_version": None, "plugin_version_after": None,
@@ -461,6 +519,7 @@ def main():
     parser.add_argument("--update-plugin", action="append", metavar="PLUGIN", help="Update this installed plugin to the latest available version on selected WordPress apps. Repeat to update multiple plugins; writes a separate JSON report.")
     parser.add_argument("--update-output", default="runcloud-plugin-update.json", help="JSON report path for --update-plugin mode.")
     parser.add_argument("--workers", type=int, default=10, help="Maximum number of web apps to process simultaneously in --update-plugin mode (default: 10).")
+    parser.add_argument("--exclusions-file", help="Tab-separated webapp ID, domain, and plugin exclusions file (default: plugin-exclusions.txt beside the script).")
     parser.add_argument("--update-core", action="store_true", help="Update WordPress core to the latest available version only when it matches --current-wp-version.")
     parser.add_argument("--current-wp-version", help="Required installed WordPress version filter for --update-core (e.g. 6.8.3).")
     parser.add_argument("--core-update-output", default="runcloud-core-update.json", help="JSON report path for --update-core mode.")
@@ -471,6 +530,14 @@ def main():
     args = parser.parse_args()
     if args.workers < 1:
         parser.error("--workers must be at least 1.")
+    exclusions_path = (Path(args.exclusions_file).expanduser() if args.exclusions_file
+                       else Path(__file__).resolve().with_name("plugin-exclusions.txt"))
+    try:
+        plugin_exclusions = load_plugin_exclusions(exclusions_path) if args.update_plugin else set()
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.update_plugin:
+        print(f"Plugin exclusions loaded: {len(plugin_exclusions)} from {exclusions_path}")
 
     operation_modes = sum(bool(value) for value in (args.find_plugin, args.remove_plugin, args.update_plugin, args.purge_runcache, args.update_core))
     if operation_modes > 1:
@@ -623,7 +690,7 @@ def main():
         wordpress_count = len(app_tasks)
         print(f"\nUpdating {len(args.update_plugin)} requested plugin(s) across {wordpress_count} web app(s) using up to {args.workers} workers.")
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            futures = [executor.submit(update_plugins_for_webapp, token, server, app, args.update_plugin, args.dry_run)
+            futures = [executor.submit(update_plugins_for_webapp, token, server, app, args.update_plugin, args.dry_run, plugin_exclusions)
                        for server, app in app_tasks]
             for future in as_completed(futures):
                 try:
@@ -812,6 +879,7 @@ def main():
         already_current = sum(r.get("status") == "already_current" for r in results)
         not_found = sum(r.get("status") == "not_found" for r in results)
         would_update = sum(r.get("status") == "would_update" for r in results)
+        excluded = sum(r.get("status") == "excluded" for r in results)
         print("RUNCloud WORDPRESS PLUGIN UPDATE REPORT")
         print("=" * 72)
         print("Plugins requested:        " + ", ".join(args.update_plugin))
@@ -821,6 +889,7 @@ def main():
         print(f"Already current:          {already_current}")
         print(f"Not installed:            {not_found}")
         print(f"Would update (dry-run):   {would_update}")
+        print(f"Excluded:                  {excluded}")
     elif args.update_core:
         updated=sum(r.get("status")=="updated" for r in results)
         current=sum(r.get("status")=="already_current" for r in results)
