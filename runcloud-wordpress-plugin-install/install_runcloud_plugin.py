@@ -284,19 +284,34 @@ def update_plugins_for_webapp(token, server, app, requested_plugins, dry_run, ex
             "server_user_id": app.get("server_user_id"), "ssh_user": SSH_USER,
             "rootPath": app.get("rootPath"), "wordpress_version": None,
             "minimum_wordpress_version": None, "script_version": SCRIPT_VERSION}
+    excluded_rows = []
+    remaining_plugins = []
+    for requested in requested_plugins:
+        if plugin_is_excluded(app, requested, exclusions):
+            excluded_rows.append({**base, "run_as_user": None, "plugin_requested": requested,
+                "plugin_matched": None, "plugin_version_before": None,
+                "plugin_update_available_version": None, "plugin_version_after": None,
+                "status": "excluded", "message": "Skipped by persistent plugin exclusion list"})
+            print(f"[EXCLUDED] {base['server']} / {app.get('name', app.get('id'))}: {requested}")
+        else:
+            remaining_plugins.append(requested)
+    if not remaining_plugins:
+        return excluded_rows
     try:
         user = get_webapp_ssh_user(token, server_id, app)
     except Exception as exc:
-        return [{**base, "run_as_user": None, "plugin_requested": p, "plugin_matched": None,
-                 "plugin_version_before": None, "plugin_update_available_version": None,
-                 "plugin_version_after": None, "status": "failed", "message": str(exc)} for p in requested_plugins]
+        failed_rows = [{**base, "run_as_user": None, "plugin_requested": p, "plugin_matched": None,
+                        "plugin_version_before": None, "plugin_update_available_version": None,
+                        "plugin_version_after": None, "status": "failed", "message": str(exc)}
+                       for p in remaining_plugins]
+        return excluded_rows + failed_rows
     try:
-        rows = update_plugins_batch(server, app, user, requested_plugins, dry_run, exclusions)
+        rows = update_plugins_batch(server, app, user, remaining_plugins, dry_run, exclusions)
     except Exception as exc:
         rows = [{"plugin_requested": p, "plugin_matched": None, "plugin_version_before": None,
                  "plugin_update_available_version": None, "plugin_version_after": None,
-                 "status": "failed", "message": str(exc)} for p in requested_plugins]
-    return [{**base, "run_as_user": user, **row} for row in rows]
+                 "status": "failed", "message": str(exc)} for p in remaining_plugins]
+    return excluded_rows + [{**base, "run_as_user": user, **row} for row in rows]
 
 
 def update_wordpress_core(server, webapp, webapp_user, expected_version, dry_run):
