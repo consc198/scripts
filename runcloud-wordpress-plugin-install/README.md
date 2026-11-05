@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-**Current script version:** `1.6.0` (Semantic Versioning).
+**Current script version:** `1.7.0` (Semantic Versioning).
 
 Check the installed script version without contacting RunCloud or requiring an API token:
 
@@ -14,7 +14,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 
 ## Script version and releases
 
-The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.6.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.7.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
 
 ## What it does
 
@@ -123,7 +123,7 @@ The text export contains only the matching web-app IDs, one per line, so it can 
 
 ## Update a plugin to its latest version
 
-Use `--update-plugin` to update an installed plugin to the latest version available through WordPress.org (or the plugin's configured update source) on every selected WordPress web app. Provide the plugin slug (for example, `akismet`) or plugin file path (for example, `akismet/akismet.php`). Repeat `--update-plugin` to update multiple plugins in one run. By default, this checks all servers and WordPress web apps; `--server`, `--webapp`, and `--webapps-file` can narrow the targets.
+Use `--update-plugin` to update an installed plugin to the latest version available through WordPress.org (or the plugin's configured update source) on every selected WordPress web app. Provide the plugin slug (for example, `akismet`) or plugin file path (for example, `akismet/akismet.php`). Repeat `--update-plugin` to update multiple plugins in one run. The script checks requested plugins together and sends all matching installed plugins to WP-CLI in a single update command per web app. Web apps are processed concurrently, with a default of 10 workers; use `--workers` to change the maximum number of web apps processed simultaneously. By default, this checks all servers and WordPress web apps; `--server`, `--webapp`, and `--webapps-file` can narrow the targets.
 
 ```bash
 # Update one plugin on all WordPress apps
@@ -135,11 +135,14 @@ python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordf
 # Limit to one server
 python3 install_runcloud_plugin.py --server 12345 --update-plugin akismet
 
+# Set the number of simultaneous web apps (default is 10)
+python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordfence --workers 5
+
 # Dry run: find plugin matches without updating
 python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordfence --dry-run
 ```
 
-Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before`, `plugin_update_available_version` (when WP-CLI reports one), and `plugin_version_after`. Statuses include `updated`, `already_current`, `not_found`, `would_update`, and `failed`. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
+Use `--workers 1` for sequential processing, or set a higher value such as `--workers 20` if the servers can handle the additional load. The worker limit applies globally across the selected web apps. Each web app uses one WP-CLI plugin-list call before the update, one batch `wp plugin update` command for all matching requested plugins, and one plugin-list call afterward to verify versions. Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before`, `plugin_update_available_version` (when WP-CLI reports one), and `plugin_version_after`. Statuses include `updated`, `already_current`, `not_found`, `would_update`, and `failed`. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
 
 ## Update WordPress core to the latest version
 
