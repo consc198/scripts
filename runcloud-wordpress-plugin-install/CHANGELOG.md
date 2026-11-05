@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0] - 2026-11-05
+
+### Added
+- Batch all requested plugin updates into a single WP-CLI `plugin update` command per web app.
+- Process plugin-update web apps concurrently with a configurable global worker pool.
+- Add `--workers` with a default of 10; values below 1 are rejected.
+- Preserve per-plugin before/after version checks and individual JSON report records after batch updates.
+
+### Notes
+- Plugin-update mode uses one plugin-list call before the batch update and one after it for verification.
+- Use `--workers 1` for sequential operation or lower concurrency if servers are under load.
+- Live RunCloud API and WordPress server testing has not been performed as part of this change.
+
 ## [1.6.0] - 2026-11-04
 
 ### Added
