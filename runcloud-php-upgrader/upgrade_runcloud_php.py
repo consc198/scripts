@@ -7,6 +7,7 @@ The token file is intentionally ignored by Git. API calls are made with curl.
 
 import argparse
 import json
+from datetime import datetime, timedelta
 import re
 import shutil
 import subprocess
@@ -14,7 +15,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.9.0"
+VERSION = "1.9.1"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -384,6 +385,24 @@ def run_max_children_log_report(token, servers, args):
         except RuntimeError as exc:
             print(f"  [ERROR] {server_name}: {exc}")
 
+    # Optionally keep only warnings within the requested lookback window.
+    if args.since_hours is not None:
+        cutoff = datetime.now() - timedelta(hours=args.since_hours)
+        now = datetime.now()
+        filtered_hits = []
+        for hit in all_hits:
+            try:
+                hit_time = datetime.strptime(hit["timestamp"], "%d-%b-%Y %H:%M:%S")
+            except ValueError:
+                continue
+            if cutoff <= hit_time <= now:
+                filtered_hits.append(hit)
+        print(
+            f"  Time filter: last {args.since_hours:g} hour(s); "
+            f"{len(filtered_hits)} of {len(all_hits)} warning(s) remain."
+        )
+        all_hits = filtered_hits
+
     # Aggregate repeated warnings for the same server/pool/limit.
     aggregated = {}
     for hit in all_hits:
@@ -546,6 +565,10 @@ def main():
         help="SSH to every selected server and report PHP-FPM max_children limit warnings.",
     )
     parser.add_argument(
+        "--since-hours", type=float, metavar="HOURS",
+        help="With a max-children scan, show only warnings from the last HOURS (for example: 24).",
+    )
+    parser.add_argument(
         "--update-hit-max-children", nargs=2, type=int, metavar=("FROM", "TO"),
         help="Scan logs, then raise only reported webapps whose current limit equals FROM.",
     )
@@ -558,6 +581,10 @@ def main():
         help="Only process a single server ID (default: all accessible servers).",
     )
     args = parser.parse_args()
+    if args.since_hours is not None and args.since_hours <= 0:
+        parser.error("--since-hours must be greater than zero.")
+    if args.since_hours is not None and not (args.scan_max_children or args.update_hit_max_children):
+        parser.error("--since-hours can only be used with --scan-max-children or --update-hit-max-children.")
     if args.only_php_cli:
         args.update_php_cli = True
     if args.update_hit_max_children:
