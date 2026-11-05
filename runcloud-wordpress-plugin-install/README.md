@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-**Current script version:** `1.7.0` (Semantic Versioning).
+**Current script version:** `1.8.0` (Semantic Versioning).
 
 Check the installed script version without contacting RunCloud or requiring an API token:
 
@@ -14,7 +14,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 
 ## Script version and releases
 
-The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.7.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.8.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
 
 ## What it does
 
@@ -143,6 +143,35 @@ python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordf
 ```
 
 Use `--workers 1` for sequential processing, or set a higher value such as `--workers 20` if the servers can handle the additional load. The worker limit applies globally across the selected web apps. Each web app uses one WP-CLI plugin-list call before the update, one batch `wp plugin update` command for all matching requested plugins, and one plugin-list call afterward to verify versions. Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before`, `plugin_update_available_version` (when WP-CLI reports one), and `plugin_version_after`. Statuses include `updated`, `already_current`, `not_found`, `would_update`, and `failed`. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
+
+## Permanently exclude specific plugin updates
+
+Use the local `plugin-exclusions.txt` file to prevent selected plugins from being updated on specific web apps. The script reads this file automatically for every `--update-plugin` run. It is optional; if it does not exist, no exclusions are applied. The default file is beside the script. Use `--exclusions-file` to specify another path.
+
+Each non-comment line must contain exactly three **tab-separated** fields:
+
+1. RunCloud web-app ID
+2. Domain (the web app's domain/name; matching is case-insensitive and ignores a leading `www.` or URL scheme)
+3. Plugin slug or plugin file path
+
+Example `plugin-exclusions.txt`:
+
+```text
+# webapp_id<TAB>domain<TAB>plugin
+67890	example.com	elementor
+67890	example.com	akismet/akismet.php
+71234	shop.example.net	woocommerce
+```
+
+An exclusion applies only when all three values match: web-app ID, domain, and requested plugin. It does not exclude that plugin on other sites, or other plugins on the same site. Excluded combinations are not sent to WP-CLI and are recorded with status `excluded` in `runcloud-plugin-update.json`. Exclusions also apply during dry-runs.
+
+The real `plugin-exclusions.txt` is ignored by Git so local operational exclusions are not published. A starter template is provided as `plugin-exclusions.example.txt`.
+
+To use a different file:
+
+```bash
+python3 install_runcloud_plugin.py --exclusions-file /path/to/my-exclusions.txt --update-plugin elementor
+```
 
 ## Update WordPress core to the latest version
 
