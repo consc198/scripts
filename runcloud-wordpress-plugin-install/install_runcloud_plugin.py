@@ -632,69 +632,112 @@ def main():
                     print(f"  Unexpected worker error: {exc}", file=sys.stderr)
     else:
         for server in servers:
-        server_id = server["id"]
-        server_name = server.get("name", f"server-{server_id}")
-        wordpress_apps = [
-            app for app in webapps_by_server.get(server_id, [])
-            if app.get("type") == "wordpress"
-        ]
+            server_id = server["id"]
+            server_name = server.get("name", f"server-{server_id}")
+            wordpress_apps = [
+                app for app in webapps_by_server.get(server_id, [])
+                if app.get("type") == "wordpress"
+            ]
 
-        for app in wordpress_apps:
-            wordpress_count += 1
-            webapp_user = None
-            try:
-                webapp_user = get_webapp_ssh_user(token, server_id, app)
-            except Exception as exc:
-                requested_plugins = ([args.find_plugin] if args.find_plugin else (args.remove_plugin or args.update_plugin)) if (args.find_plugin or args.remove_plugin or args.update_plugin) else [None]
-                if args.purge_runcache:
-                    requested_plugins = [None]
-                for plugin_requested in requested_plugins:
+            for app in wordpress_apps:
+                wordpress_count += 1
+                webapp_user = None
+                try:
+                    webapp_user = get_webapp_ssh_user(token, server_id, app)
+                except Exception as exc:
+                    requested_plugins = ([args.find_plugin] if args.find_plugin else (args.remove_plugin or args.update_plugin)) if (args.find_plugin or args.remove_plugin or args.update_plugin) else [None]
+                    if args.purge_runcache:
+                        requested_plugins = [None]
+                    for plugin_requested in requested_plugins:
+                        results.append({
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "server_id": server_id,
+                            "server": server_name,
+                            "server_ip": server.get("ipAddress"),
+                            "webapp_id": app.get("id"),
+                            "webapp": app.get("name"),
+                            "server_user_id": app.get("server_user_id"),
+                            "ssh_user": SSH_USER,
+                            "run_as_user": None,
+                            "rootPath": app.get("rootPath"),
+                            "plugin_requested": plugin_requested,
+                            "plugin_matched": None,
+                            "wordpress_version": None,
+                            "minimum_wordpress_version": args.min_wp_version,
+                            "status": "failed",
+                            "message": str(exc),
+                        })
+                    print(f"  FAILED: {exc}", file=sys.stderr)
+                    continue
+
+                if args.find_plugin:
+                    try:
+                        status, message, matched_plugin, installed_version = discover_plugin(server, app, webapp_user, args.find_plugin)
+                    except Exception as exc:
+                        status, message, matched_plugin, installed_version = "failed", str(exc), None, None
+                        print(f"  FAILED discovering {args.find_plugin}: {message}", file=sys.stderr)
                     results.append({
                         "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "server_id": server_id,
-                        "server": server_name,
-                        "server_ip": server.get("ipAddress"),
-                        "webapp_id": app.get("id"),
-                        "webapp": app.get("name"),
-                        "server_user_id": app.get("server_user_id"),
-                        "ssh_user": SSH_USER,
-                        "run_as_user": None,
-                        "rootPath": app.get("rootPath"),
-                        "plugin_requested": plugin_requested,
-                        "plugin_matched": None,
-                        "wordpress_version": None,
-                        "minimum_wordpress_version": args.min_wp_version,
-                        "status": "failed",
-                        "message": str(exc),
+                        "server_id": server_id, "server": server_name, "server_ip": server.get("ipAddress"),
+                        "webapp_id": app.get("id"), "webapp": app.get("name"),
+                        "server_user_id": app.get("server_user_id"), "ssh_user": SSH_USER,
+                        "run_as_user": webapp_user, "rootPath": app.get("rootPath"),
+                        "plugin_requested": args.find_plugin, "plugin_matched": matched_plugin,
+                        "plugin_version": installed_version, "status": status, "message": message,
                     })
-                print(f"  FAILED: {exc}", file=sys.stderr)
-                continue
-
-            if args.find_plugin:
-                try:
-                    status, message, matched_plugin, installed_version = discover_plugin(server, app, webapp_user, args.find_plugin)
-                except Exception as exc:
-                    status, message, matched_plugin, installed_version = "failed", str(exc), None, None
-                    print(f"  FAILED discovering {args.find_plugin}: {message}", file=sys.stderr)
-                results.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "server_id": server_id, "server": server_name, "server_ip": server.get("ipAddress"),
-                    "webapp_id": app.get("id"), "webapp": app.get("name"),
-                    "server_user_id": app.get("server_user_id"), "ssh_user": SSH_USER,
-                    "run_as_user": webapp_user, "rootPath": app.get("rootPath"),
-                    "plugin_requested": args.find_plugin, "plugin_matched": matched_plugin,
-                    "plugin_version": installed_version, "status": status, "message": message,
-                })
-            elif args.remove_plugin:
-                for plugin_requested in args.remove_plugin:
-                    matched_plugin = None
+                elif args.remove_plugin:
+                    for plugin_requested in args.remove_plugin:
+                        matched_plugin = None
+                        try:
+                            status, message, matched_plugin = remove_plugin(
+                                server, app, webapp_user, plugin_requested, args.dry_run
+                            )
+                        except Exception as exc:
+                            status, message = "failed", str(exc)
+                            print(f"  FAILED removing {plugin_requested}: {message}", file=sys.stderr)
+                        results.append({
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "server_id": server_id,
+                            "server": server_name,
+                            "server_ip": server.get("ipAddress"),
+                            "webapp_id": app.get("id"),
+                            "webapp": app.get("name"),
+                            "server_user_id": app.get("server_user_id"),
+                            "ssh_user": SSH_USER,
+                            "run_as_user": webapp_user,
+                            "rootPath": app.get("rootPath"),
+                            "plugin_requested": plugin_requested,
+                            "plugin_matched": matched_plugin,
+                            "wordpress_version": None,
+                            "minimum_wordpress_version": None,
+                            "status": status,
+                            "message": message,
+                        })
+                elif args.update_core:
+                    before = after = None
                     try:
-                        status, message, matched_plugin = remove_plugin(
-                            server, app, webapp_user, plugin_requested, args.dry_run
-                        )
+                        status, message, before, after = update_wordpress_core(server, app, webapp_user, args.current_wp_version, args.dry_run)
                     except Exception as exc:
                         status, message = "failed", str(exc)
-                        print(f"  FAILED removing {plugin_requested}: {message}", file=sys.stderr)
+                        print(f"  FAILED updating WordPress core: {message}", file=sys.stderr)
+                    results.append({
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "server_id": server_id, "server": server_name, "server_ip": server.get("ipAddress"),
+                        "webapp_id": app.get("id"), "webapp": app.get("name"),
+                        "server_user_id": app.get("server_user_id"), "ssh_user": SSH_USER,
+                        "run_as_user": webapp_user, "rootPath": app.get("rootPath"),
+                        "operation": "update_core", "current_wp_version_filter": args.current_wp_version,
+                        "wordpress_version_before": before,
+                        "wordpress_update_available_version": after if status == "would_update" else None,
+                        "wordpress_version_after": after if status in {"updated", "already_current"} else None,
+                        "status": status, "message": message,
+                    })
+                elif args.purge_runcache:
+                    try:
+                        status, message = purge_runcloud_cache(server, app, webapp_user, args.dry_run)
+                    except Exception as exc:
+                        status, message = "failed", str(exc)
+                        print(f"  FAILED purging RunCloud cache: {message}", file=sys.stderr)
                     results.append({
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "server_id": server_id,
@@ -706,84 +749,41 @@ def main():
                         "ssh_user": SSH_USER,
                         "run_as_user": webapp_user,
                         "rootPath": app.get("rootPath"),
-                        "plugin_requested": plugin_requested,
-                        "plugin_matched": matched_plugin,
+                        "operation": "purge_runcache",
+                        "plugin_requested": None,
+                        "plugin_matched": None,
                         "wordpress_version": None,
                         "minimum_wordpress_version": None,
                         "status": status,
                         "message": message,
                     })
-            elif args.update_core:
-                before = after = None
-                try:
-                    status, message, before, after = update_wordpress_core(server, app, webapp_user, args.current_wp_version, args.dry_run)
-                except Exception as exc:
-                    status, message = "failed", str(exc)
-                    print(f"  FAILED updating WordPress core: {message}", file=sys.stderr)
-                results.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "server_id": server_id, "server": server_name, "server_ip": server.get("ipAddress"),
-                    "webapp_id": app.get("id"), "webapp": app.get("name"),
-                    "server_user_id": app.get("server_user_id"), "ssh_user": SSH_USER,
-                    "run_as_user": webapp_user, "rootPath": app.get("rootPath"),
-                    "operation": "update_core", "current_wp_version_filter": args.current_wp_version,
-                    "wordpress_version_before": before,
-                    "wordpress_update_available_version": after if status == "would_update" else None,
-                    "wordpress_version_after": after if status in {"updated", "already_current"} else None,
-                    "status": status, "message": message,
-                })
-            elif args.purge_runcache:
-                try:
-                    status, message = purge_runcloud_cache(server, app, webapp_user, args.dry_run)
-                except Exception as exc:
-                    status, message = "failed", str(exc)
-                    print(f"  FAILED purging RunCloud cache: {message}", file=sys.stderr)
-                results.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "server_id": server_id,
-                    "server": server_name,
-                    "server_ip": server.get("ipAddress"),
-                    "webapp_id": app.get("id"),
-                    "webapp": app.get("name"),
-                    "server_user_id": app.get("server_user_id"),
-                    "ssh_user": SSH_USER,
-                    "run_as_user": webapp_user,
-                    "rootPath": app.get("rootPath"),
-                    "operation": "purge_runcache",
-                    "plugin_requested": None,
-                    "plugin_matched": None,
-                    "wordpress_version": None,
-                    "minimum_wordpress_version": None,
-                    "status": status,
-                    "message": message,
-                })
-            else:
-                installed_version = None
-                try:
-                    status, message, installed_version = install_plugin(
-                        server, app, webapp_user, args.dry_run, args.min_wp_version
-                    )
-                except Exception as exc:
-                    status, message = "failed", str(exc)
-                    print(f"  FAILED: {message}", file=sys.stderr)
-                results.append({
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "server_id": server_id,
-                    "server": server_name,
-                    "server_ip": server.get("ipAddress"),
-                    "webapp_id": app.get("id"),
-                    "webapp": app.get("name"),
-                    "server_user_id": app.get("server_user_id"),
-                    "ssh_user": SSH_USER,
-                    "run_as_user": webapp_user,
-                    "rootPath": app.get("rootPath"),
-                    "plugin_requested": None,
-                    "plugin_matched": None,
-                    "wordpress_version": installed_version,
-                    "minimum_wordpress_version": args.min_wp_version,
-                    "status": status,
-                    "message": message,
-                })
+                else:
+                    installed_version = None
+                    try:
+                        status, message, installed_version = install_plugin(
+                            server, app, webapp_user, args.dry_run, args.min_wp_version
+                        )
+                    except Exception as exc:
+                        status, message = "failed", str(exc)
+                        print(f"  FAILED: {message}", file=sys.stderr)
+                    results.append({
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "server_id": server_id,
+                        "server": server_name,
+                        "server_ip": server.get("ipAddress"),
+                        "webapp_id": app.get("id"),
+                        "webapp": app.get("name"),
+                        "server_user_id": app.get("server_user_id"),
+                        "ssh_user": SSH_USER,
+                        "run_as_user": webapp_user,
+                        "rootPath": app.get("rootPath"),
+                        "plugin_requested": None,
+                        "plugin_matched": None,
+                        "wordpress_version": installed_version,
+                        "minimum_wordpress_version": args.min_wp_version,
+                        "status": status,
+                        "message": message,
+                    })
 
     for entry in results:
         entry.setdefault("script_version", SCRIPT_VERSION)
