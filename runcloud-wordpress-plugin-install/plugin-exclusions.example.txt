@@ -1,0 +1,8 @@
+# Copy this file to plugin-exclusions.txt and add your own exclusions.
+# Each entry must have exactly three TAB-separated fields:
+# RunCloud web-app ID<TAB>domain<TAB>plugin slug or plugin file path
+#
+# Example (replace these values with your own):
+67890	example.com	elementor
+67890	example.com	akismet/akismet.php
+71234	shop.example.net	woocommerce
