@@ -182,7 +182,7 @@ def plugin_is_excluded(webapp, requested_plugin, exclusions):
     return any(
         excluded_id == webapp_id and excluded_domain in domains
         and (excluded_plugin == plugin
-             or ("/" not in requested_plugin and excluded_plugin.split("/", 1)[0] == plugin))
+             or excluded_plugin.split("/", 1)[0] == plugin.split("/", 1)[0])
         for excluded_id, excluded_domain, excluded_plugin in exclusions
     )
 
@@ -547,6 +547,8 @@ def main():
         parser.error("--workers must be at least 1.")
     exclusions_path = (Path(args.exclusions_file).expanduser() if args.exclusions_file
                        else Path(__file__).resolve().with_name("plugin-exclusions.txt"))
+    if args.update_plugin and args.exclusions_file and not exclusions_path.is_file():
+        parser.error(f"Specified exclusions file does not exist: {exclusions_path}")
     try:
         plugin_exclusions = load_plugin_exclusions(exclusions_path) if args.update_plugin else set()
     except ValueError as exc:
