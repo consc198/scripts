@@ -159,7 +159,7 @@ def load_plugin_exclusions(path):
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
-        fields = [field.strip() for field in raw_line.split("\\t")]
+        fields = [field.strip() for field in raw_line.split("\t")]
         if len(fields) != 3 or not all(fields):
             raise ValueError(
                 f"Invalid exclusion at {path}:{line_number}. "
