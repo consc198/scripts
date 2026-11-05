@@ -2,6 +2,7 @@
 """Discover RunCloud WordPress apps and force-install + activate a plugin ZIP."""
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -16,7 +17,7 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
 PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
-SCRIPT_VERSION = "1.8.0"
+SCRIPT_VERSION = "1.9.0"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
@@ -263,7 +264,8 @@ def update_plugins_batch(server, webapp, webapp_user, requested_plugins, dry_run
         after = after_record.get("version") if after_record else None
         item["plugin_version_after"] = after
         if after and before and after != before:
-            item.update(status="updated", message=f"Plugin version changed from {before} to {after}")
+            item.update(status="updated", update_timestamp=datetime.now(timezone.utc).isoformat(),
+                        message=f"Plugin version changed from {before} to {after}")
             print(f"[UPDATED] {server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}: {name} {before} -> {after}")
         elif update_error:
             item.update(status="failed", message=f"Batch update command failed: {update_error}")
@@ -275,12 +277,43 @@ def update_plugins_batch(server, webapp, webapp_user, requested_plugins, dry_run
     return rows
 
 
+def append_plugin_update_history(results, output_path):
+    """Append verified successful plugin updates to a tab-separated history file."""
+    fields = ["timestamp_utc", "server_id", "server", "webapp_id", "domain", "plugin", "version_before", "version_after"]
+    entries = [row for row in results if row.get("status") == "updated" and row.get("update_timestamp")]
+    if not entries:
+        return 0
+    path = Path(output_path).expanduser()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        needs_header = not path.exists() or path.stat().st_size == 0
+        with path.open("a", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\\t", lineterminator="\\n")
+            if needs_header:
+                writer.writeheader()
+            for row in entries:
+                writer.writerow({
+                    "timestamp_utc": row["update_timestamp"],
+                    "server_id": row.get("server_id", ""),
+                    "server": row.get("server", ""),
+                    "webapp_id": row.get("webapp_id", ""),
+                    "domain": row.get("webapp_domain") or row.get("webapp", ""),
+                    "plugin": row.get("plugin_matched") or row.get("plugin_requested", ""),
+                    "version_before": row.get("plugin_version_before") or "",
+                    "version_after": row.get("plugin_version_after") or "",
+                })
+    except OSError as exc:
+        raise RuntimeError(f"Could not append plugin update history to {path}: {exc}") from exc
+    return len(entries)
+
+
 def update_plugins_for_webapp(token, server, app, requested_plugins, dry_run, exclusions):
     """Resolve the app user and update requested plugins; return JSON-ready rows."""
     server_id = server["id"]
     base = {"timestamp": datetime.now(timezone.utc).isoformat(), "server_id": server_id,
             "server": server.get("name", f"server-{server_id}"), "server_ip": server.get("ipAddress"),
             "webapp_id": app.get("id"), "webapp": app.get("name"),
+            "webapp_domain": app.get("domain") or app.get("name"),
             "server_user_id": app.get("server_user_id"), "ssh_user": SSH_USER,
             "rootPath": app.get("rootPath"), "wordpress_version": None,
             "minimum_wordpress_version": None, "script_version": SCRIPT_VERSION}
@@ -535,6 +568,7 @@ def main():
     parser.add_argument("--update-output", default="runcloud-plugin-update.json", help="JSON report path for --update-plugin mode.")
     parser.add_argument("--workers", type=int, default=10, help="Maximum number of web apps to process simultaneously in --update-plugin mode (default: 10).")
     parser.add_argument("--exclusions-file", help="Tab-separated webapp ID, domain, and plugin exclusions file (default: plugin-exclusions.txt beside the script).")
+    parser.add_argument("--update-history-file", help="Append-only history of successful plugin updates (default: plugin-update-history.txt beside the script).")
     parser.add_argument("--update-core", action="store_true", help="Update WordPress core to the latest available version only when it matches --current-wp-version.")
     parser.add_argument("--current-wp-version", help="Required installed WordPress version filter for --update-core (e.g. 6.8.3).")
     parser.add_argument("--core-update-output", default="runcloud-core-update.json", help="JSON report path for --update-core mode.")
@@ -875,6 +909,15 @@ def main():
     for record in results:
         record["script_version"] = SCRIPT_VERSION
     Path(report_path).expanduser().write_text(json.dumps(results, indent=2), encoding="utf-8")
+    if args.update_plugin:
+        history_path = (Path(args.update_history_file).expanduser() if args.update_history_file
+                        else Path(__file__).resolve().with_name("plugin-update-history.txt"))
+        try:
+            history_count = append_plugin_update_history(results, history_path)
+            print(f"Successful updates appended to history: {history_count} ({history_path})")
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
     if args.find_plugin:
         matching_ids = sorted({str(r["webapp_id"]) for r in results if r.get("status") == "found" and r.get("webapp_id") is not None})
         Path(args.discovery_webapps_output).expanduser().write_text(("\n".join(matching_ids) + "\n") if matching_ids else "", encoding="utf-8")
