@@ -9,13 +9,14 @@ import shlex
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
 PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
-SCRIPT_VERSION = "1.6.0"
+SCRIPT_VERSION = "1.7.0"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
@@ -135,81 +136,109 @@ def get_plugin_records(host, webapp_user, root_path):
     return records
 
 
-def update_plugin(server, webapp, webapp_user, plugin_slug, dry_run):
-    """Update an installed plugin and report versions before and after."""
-    host = server.get("ipAddress")
-    root_path = webapp.get("rootPath")
-    if not host:
-        return "failed", "No server IP address", None, None, None, None
-    if not root_path:
-        return "failed", "No web-app rootPath", None, None, None, None
-
-    server_name = server.get("name", f"server-{server['id']}")
-    webapp_name = webapp.get("name", f"webapp-{webapp['id']}")
+def update_plugins_batch(server, webapp, webapp_user, requested_plugins, dry_run):
+    """Check and update all requested plugins with one WP-CLI update command."""
+    host, root_path = server.get("ipAddress"), webapp.get("rootPath")
+    if not host or not root_path:
+        reason = "No server IP address" if not host else "No web-app rootPath"
+        return [{"plugin_requested": p, "plugin_matched": None, "plugin_version_before": None,
+                 "plugin_update_available_version": None, "plugin_version_after": None,
+                 "status": "failed", "message": reason} for p in requested_plugins]
     try:
         records = get_plugin_records(host, webapp_user, root_path)
     except Exception as exc:
-        return "failed", f"Could not list installed plugins and versions: {exc}", None, None, None, None
+        return [{"plugin_requested": p, "plugin_matched": None, "plugin_version_before": None,
+                 "plugin_update_available_version": None, "plugin_version_after": None,
+                 "status": "failed", "message": f"Could not list installed plugins and versions: {exc}"}
+                for p in requested_plugins]
 
-    matched_record = next(
-        (
-            record for record in records
-            if record.get("name") == plugin_slug
-            or ("/" not in plugin_slug and str(record.get("name", "")).split("/", 1)[0] == plugin_slug)
-        ),
-        None,
-    )
-    if not matched_record:
-        print(f"[NOT FOUND] {server_name} / {webapp_name}: {plugin_slug}")
-        return "not_found", "Plugin is not installed", None, None, None, None
+    rows, matched = [], []
+    for requested in requested_plugins:
+        record = next((r for r in records if r.get("name") == requested or
+                       ("/" not in requested and str(r.get("name", "")).split("/", 1)[0] == requested)), None)
+        if not record:
+            print(f"[NOT FOUND] {server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}: {requested}")
+            rows.append({"plugin_requested": requested, "plugin_matched": None,
+                         "plugin_version_before": None, "plugin_update_available_version": None,
+                         "plugin_version_after": None, "status": "not_found", "message": "Plugin is not installed"})
+            continue
+        name, before = record.get("name"), record.get("version")
+        state, raw_version = str(record.get("update") or "").lower(), record.get("update_version")
+        available = raw_version if raw_version and str(raw_version).lower() not in {"none", "false", "0"} and state not in {"", "none", "false", "0"} else None
+        has_update = available is not None or state == "available"
+        item = {"plugin_requested": requested, "plugin_matched": name,
+                "plugin_version_before": before, "plugin_update_available_version": available,
+                "plugin_version_after": before, "status": "already_current",
+                "message": "No plugin update is currently available"}
+        rows.append(item)
+        if dry_run:
+            if has_update:
+                item.update(status="would_update", message="Update available; dry-run did not change the plugin")
+                print(f"[DRY-RUN] Would update {name} on {server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}: {before or 'unknown'} -> {available or 'latest available'}")
+            else:
+                print(f"[CURRENT] {server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}: {name} {before or '(version unknown)'}")
+        else:
+            matched.append((name, before, available, has_update, item))
 
-    matched_plugin = matched_record.get("name")
-    installed_before = matched_record.get("version")
-    update_state = str(matched_record.get("update") or "").lower()
-    raw_update_version = matched_record.get("update_version")
-    available_version = (
-        raw_update_version
-        if raw_update_version and str(raw_update_version).lower() not in {"none", "false", "0"}
-        and update_state not in {"", "none", "false", "0"}
-        else None
-    )
-    has_update = available_version is not None or update_state == "available"
+    if dry_run or not matched:
+        return rows
 
-    if dry_run:
-        if has_update:
-            print(
-                f"[DRY-RUN] Would update {matched_plugin} on {server_name} / {webapp_name}: "
-                f"{installed_before or 'unknown'} -> {available_version or 'latest available'}"
-            )
-            return "would_update", "Update available; dry-run did not change the plugin", matched_plugin, installed_before, available_version, installed_before
-        print(f"[CURRENT] {server_name} / {webapp_name}: {matched_plugin} {installed_before or '(version unknown)'}")
-        return "already_current", "No plugin update is currently available", matched_plugin, installed_before, available_version, installed_before
-
+    names = list(dict.fromkeys(item[0] for item in matched))
+    update_error, update_output = None, ""
     try:
-        output = run_as_webapp_user(
-            host, webapp_user, root_path,
-            f"plugin update {shlex.quote(matched_plugin)} --skip-plugins --skip-themes",
-        )
+        update_output = run_as_webapp_user(host, webapp_user, root_path,
+            "plugin update " + " ".join(shlex.quote(name) for name in names) + " --skip-plugins --skip-themes")
     except Exception as exc:
-        return "failed", f"Plugin {matched_plugin} ({installed_before or 'unknown version'}) update failed: {exc}", matched_plugin, installed_before, available_version, None
+        update_error = str(exc)
 
     try:
         after_records = get_plugin_records(host, webapp_user, root_path)
-        after_record = next((record for record in after_records if record.get("name") == matched_plugin), None)
-        installed_after = after_record.get("version") if after_record else None
+        after_by_name = {r.get("name"): r for r in after_records}
     except Exception as exc:
-        return "failed", f"Update command completed but could not verify the installed version: {exc}", matched_plugin, installed_before, available_version, None
+        detail = f"Batch update command {'failed: ' + update_error + '; ' if update_error else 'completed; '}could not verify installed versions: {exc}"
+        for _, _, _, _, item in matched:
+            item.update(status="failed", plugin_version_after=None, message=detail)
+        return rows
 
-    if installed_after and installed_after != installed_before:
-        status = "updated"
-        message = f"Plugin version changed from {installed_before} to {installed_after}"
-        print(f"[UPDATED] {server_name} / {webapp_name}: {matched_plugin} {installed_before} -> {installed_after}")
-    else:
-        status = "already_current"
-        message = output or f"Plugin remains at version {installed_after or installed_before or 'unknown'}; no version change was detected"
-        print(f"[CURRENT] {server_name} / {webapp_name}: {matched_plugin} {installed_after or installed_before or '(version unknown)'}")
-    return status, message, matched_plugin, installed_before, available_version, installed_after
+    for name, before, available, has_update, item in matched:
+        after_record = after_by_name.get(name)
+        after = after_record.get("version") if after_record else None
+        item["plugin_version_after"] = after
+        if after and before and after != before:
+            item.update(status="updated", message=f"Plugin version changed from {before} to {after}")
+            print(f"[UPDATED] {server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}: {name} {before} -> {after}")
+        elif update_error:
+            item.update(status="failed", message=f"Batch update command failed: {update_error}")
+        elif has_update and after == before:
+            item.update(status="failed", message=f"WP-CLI reported an update available but the installed version did not change. {update_output}".strip())
+        else:
+            item.update(status="already_current", message=update_output or f"Plugin remains at version {after or before or 'unknown'}")
+            print(f"[CURRENT] {server.get('name', server.get('id'))} / {webapp.get('name', webapp.get('id'))}: {name} {after or before or '(version unknown)'}")
+    return rows
 
+
+def update_plugins_for_webapp(token, server, app, requested_plugins, dry_run):
+    """Resolve the app user and update requested plugins; return JSON-ready rows."""
+    server_id = server["id"]
+    base = {"timestamp": datetime.now(timezone.utc).isoformat(), "server_id": server_id,
+            "server": server.get("name", f"server-{server_id}"), "server_ip": server.get("ipAddress"),
+            "webapp_id": app.get("id"), "webapp": app.get("name"),
+            "server_user_id": app.get("server_user_id"), "ssh_user": SSH_USER,
+            "rootPath": app.get("rootPath"), "wordpress_version": None,
+            "minimum_wordpress_version": None, "script_version": SCRIPT_VERSION}
+    try:
+        user = get_webapp_ssh_user(token, server_id, app)
+    except Exception as exc:
+        return [{**base, "run_as_user": None, "plugin_requested": p, "plugin_matched": None,
+                 "plugin_version_before": None, "plugin_update_available_version": None,
+                 "plugin_version_after": None, "status": "failed", "message": str(exc)} for p in requested_plugins]
+    try:
+        rows = update_plugins_batch(server, app, user, requested_plugins, dry_run)
+    except Exception as exc:
+        rows = [{"plugin_requested": p, "plugin_matched": None, "plugin_version_before": None,
+                 "plugin_update_available_version": None, "plugin_version_after": None,
+                 "status": "failed", "message": str(exc)} for p in requested_plugins]
+    return [{**base, "run_as_user": user, **row} for row in rows]
 
 
 def update_wordpress_core(server, webapp, webapp_user, expected_version, dry_run):
@@ -431,6 +460,7 @@ def main():
     parser.add_argument("--removal-output", default="runcloud-plugin-removal.json", help="JSON report path for --remove-plugin mode.")
     parser.add_argument("--update-plugin", action="append", metavar="PLUGIN", help="Update this installed plugin to the latest available version on selected WordPress apps. Repeat to update multiple plugins; writes a separate JSON report.")
     parser.add_argument("--update-output", default="runcloud-plugin-update.json", help="JSON report path for --update-plugin mode.")
+    parser.add_argument("--workers", type=int, default=10, help="Maximum number of web apps to process simultaneously in --update-plugin mode (default: 10).")
     parser.add_argument("--update-core", action="store_true", help="Update WordPress core to the latest available version only when it matches --current-wp-version.")
     parser.add_argument("--current-wp-version", help="Required installed WordPress version filter for --update-core (e.g. 6.8.3).")
     parser.add_argument("--core-update-output", default="runcloud-core-update.json", help="JSON report path for --update-core mode.")
@@ -439,6 +469,8 @@ def main():
     parser.add_argument("--token", help="RunCloud API token (overrides environment variable and token.txt).")
     parser.add_argument("--output", default="runcloud-plugin-install.json")
     args = parser.parse_args()
+    if args.workers < 1:
+        parser.error("--workers must be at least 1.")
 
     operation_modes = sum(bool(value) for value in (args.find_plugin, args.remove_plugin, args.update_plugin, args.purge_runcache, args.update_core))
     if operation_modes > 1:
@@ -584,7 +616,22 @@ def main():
 
     results.extend(discovery_failures)
 
-    for server in servers:
+    if args.update_plugin:
+        app_tasks = [(server, app) for server in servers
+                     for app in webapps_by_server.get(server["id"], [])
+                     if app.get("type") == "wordpress"]
+        wordpress_count = len(app_tasks)
+        print(f"\nUpdating {len(args.update_plugin)} requested plugin(s) across {wordpress_count} web app(s) using up to {args.workers} workers.")
+        with ThreadPoolExecutor(max_workers=args.workers) as executor:
+            futures = [executor.submit(update_plugins_for_webapp, token, server, app, args.update_plugin, args.dry_run)
+                       for server, app in app_tasks]
+            for future in as_completed(futures):
+                try:
+                    results.extend(future.result())
+                except Exception as exc:
+                    print(f"  Unexpected worker error: {exc}", file=sys.stderr)
+    else:
+        for server in servers:
         server_id = server["id"]
         server_name = server.get("name", f"server-{server_id}")
         wordpress_apps = [
@@ -661,39 +708,6 @@ def main():
                         "rootPath": app.get("rootPath"),
                         "plugin_requested": plugin_requested,
                         "plugin_matched": matched_plugin,
-                        "wordpress_version": None,
-                        "minimum_wordpress_version": None,
-                        "status": status,
-                        "message": message,
-                    })
-            elif args.update_plugin:
-                for plugin_requested in args.update_plugin:
-                    matched_plugin = None
-                    version_before = available_version = version_after = None
-                    try:
-                        status, message, matched_plugin, version_before, available_version, version_after = update_plugin(
-                            server, app, webapp_user, plugin_requested, args.dry_run
-                        )
-                    except Exception as exc:
-                        status, message = "failed", str(exc)
-                        print(f"  FAILED updating {plugin_requested}: {message}", file=sys.stderr)
-                    results.append({
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "server_id": server_id,
-                        "server": server_name,
-                        "server_ip": server.get("ipAddress"),
-                        "webapp_id": app.get("id"),
-                        "webapp": app.get("name"),
-                        "server_user_id": app.get("server_user_id"),
-                        "ssh_user": SSH_USER,
-                        "run_as_user": webapp_user,
-                        "rootPath": app.get("rootPath"),
-                        "plugin_requested": plugin_requested,
-                        "plugin_matched": matched_plugin,
-                        "plugin_version_before": version_before,
-                        "plugin_update_available_version": available_version,
-                        "plugin_version_after": version_after,
-                        "script_version": SCRIPT_VERSION,
                         "wordpress_version": None,
                         "minimum_wordpress_version": None,
                         "status": status,
