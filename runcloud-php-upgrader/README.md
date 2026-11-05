@@ -1,6 +1,6 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.9.0**
+**Current version: 1.9.1**
 
 Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required. A terminal progress bar shows webapp scan progress. The optional `--update-php-cli` flag also updates the server-level PHP-CLI version using the same source and target version options.
 
@@ -100,14 +100,20 @@ Run a read-only report:
 
 ```bash
 python3 upgrade_runcloud_php.py --scan-max-children
+
+# Show only warnings recorded in the last 24 hours
+python3 upgrade_runcloud_php.py --scan-max-children --since-hours 24
 ```
 
-The report groups warnings by server, PHP-FPM pool, and configured limit. It shows the server/IP, pool name, current limit from the log warning, number of matching warning lines, and latest timestamp found in the scanned log files.
+The optional `--since-hours HOURS` filter limits results to warnings recorded within the specified lookback period (for example, `--since-hours 24` for the last 24 hours). Without it, all matching warnings currently present in the scanned log files are included. The time filter compares log timestamps with the local time on the machine running the script. The report groups warnings by server, PHP-FPM pool, and configured limit. It shows the server/IP, pool name, current limit from the log warning, number of matching warning lines, and latest timestamp found in the scanned log files.
 
 To raise only webapps reported as hitting a current limit of 10 to 15:
 
 ```bash
 python3 upgrade_runcloud_php.py --update-hit-max-children 10 15
+
+# Only consider pools with a warning in the last 24 hours
+python3 upgrade_runcloud_php.py --update-hit-max-children 10 15 --since-hours 24
 ```
 
 The command scans the logs again, then verifies the current PHP-FPM setting through the RunCloud API before showing eligible changes. Add `--apply` to submit the changes:
