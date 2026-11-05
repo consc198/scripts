@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.0] - 2026-11-05
+
+### Added
+- Append every verified successful plugin/site update to a persistent tab-separated `plugin-update-history.txt` audit log.
+- Record UTC timestamp, server and web-app IDs, domain, plugin file, and versions before and after the update.
+- Add `--update-history-file` to choose a custom history file path.
+- Ignore the local history file in Git.
+
+### Notes
+- Only updates verified by an installed-version change are logged; dry-runs, failures, exclusions, and already-current plugins are omitted.
+- Live RunCloud API and WordPress server testing has not been performed as part of this change.
+
 ## [1.8.0] - 2026-11-05
 
 ### Added
