@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1] - 2026-11-05
+
+### Added
+- Added `--since-hours HOURS` to filter PHP-FPM max_children scan results to warnings within a recent lookback window.
+- The filter also applies to `--update-hit-max-children`, so only recently affected pools are considered for preview or updates.
+
+
 All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/).
