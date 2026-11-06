@@ -18,7 +18,7 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
 PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
-SCRIPT_VERSION = "1.10.1"
+SCRIPT_VERSION = "1.11.0"
 API_REQUEST_DELAY_SECONDS = 1.0
 API_REQUEST_LOCK = threading.Lock()
 LAST_API_REQUEST_AT = 0.0
@@ -779,25 +779,56 @@ def main():
         print(f"\nPreparing {wordpress_count} web app(s): resolving RunCloud users sequentially...")
         user_cache = {}
         prepared_tasks = []
-        for server, app in app_tasks:
+        progress_started = time.monotonic()
+        progress_tty = sys.stdout.isatty()
+        progress_interval = max(1, wordpress_count // 20)
+        resolved_count = failed_count = excluded_count = 0
+
+        def show_preparation_progress(processed, force=False):
+            elapsed = int(time.monotonic() - progress_started)
+            minutes, seconds = divmod(elapsed, 60)
+            fraction = processed / wordpress_count if wordpress_count else 1
+            bar_width = 24
+            filled = int(bar_width * fraction)
+            bar = "#" * filled + "-" * (bar_width - filled)
+            line = (
+                f"  Progress: [{bar}] {processed}/{wordpress_count} "
+                f"({fraction:.0%}) | Resolved: {resolved_count} | "
+                f"Failed: {failed_count} | Excluded: {excluded_count} | "
+                f"Elapsed: {minutes}:{seconds:02d}"
+            )
+            if progress_tty:
+                print("\\r" + line, end="", flush=True)
+                if force:
+                    print()
+            elif force or processed % progress_interval == 0:
+                print(line, flush=True)
+
+        for processed, (server, app) in enumerate(app_tasks, 1):
             remaining_plugins = [plugin for plugin in args.update_plugin
                                  if not plugin_is_excluded(app, plugin, plugin_exclusions)]
             if not remaining_plugins:
                 prepared_tasks.append((server, app, None, None))
-                continue
-            user_id = app.get("server_user_id")
-            cache_key = (str(server["id"]), str(user_id))
-            if cache_key not in user_cache:
-                try:
-                    user_cache[cache_key] = (get_webapp_ssh_user(token, server["id"], app), None)
-                except Exception as exc:
-                    user_cache[cache_key] = (None, str(exc))
-            user, user_error = user_cache[cache_key]
-            prepared_tasks.append((server, app, user, user_error))
-            if user_error:
-                print(f"  USER LOOKUP FAILED: {server.get('name', server['id'])} / {app.get('name', app.get('id'))}: {user_error}", file=sys.stderr)
-        print(f"  Resolved {sum(1 for _, _, user, error in prepared_tasks if user)} web app user(s); "
-              f"{sum(1 for _, _, user, error in prepared_tasks if error)} lookup failure(s); "
+                excluded_count += 1
+            else:
+                user_id = app.get("server_user_id")
+                cache_key = (str(server["id"]), str(user_id))
+                if cache_key not in user_cache:
+                    try:
+                        user_cache[cache_key] = (get_webapp_ssh_user(token, server["id"], app), None)
+                    except Exception as exc:
+                        user_cache[cache_key] = (None, str(exc))
+                user, user_error = user_cache[cache_key]
+                prepared_tasks.append((server, app, user, user_error))
+                if user_error:
+                    failed_count += 1
+                    print(f"\\n  USER LOOKUP FAILED: {server.get('name', server['id'])} / {app.get('name', app.get('id'))}: {user_error}", file=sys.stderr)
+                else:
+                    resolved_count += 1
+            show_preparation_progress(processed)
+        show_preparation_progress(wordpress_count, force=True)
+        print(f"  Resolved {resolved_count} web app user(s); "
+              f"{failed_count} lookup failure(s); {excluded_count} excluded web app(s); "
               f"{len(user_cache)} unique RunCloud user lookup(s).")
         print(f"\nUpdating {len(args.update_plugin)} requested plugin(s) across {wordpress_count} web app(s) using up to {args.workers} SSH/WP-CLI workers.")
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
