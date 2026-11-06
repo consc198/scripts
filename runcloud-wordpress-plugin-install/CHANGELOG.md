@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.11.0] - 2026-11-06
+
+### Added
+- Show live progress while resolving RunCloud users sequentially before plugin-update workers start.
+- Display processed web apps, percentage, successful and failed user lookups, excluded apps, and elapsed time; refresh in place on interactive terminals and periodically when output is redirected.
+
+### Notes
+- Progress reporting does not change API request ordering, caching, pacing, retries, or worker concurrency.
+- Live RunCloud API and WordPress server testing has not been performed as part of this change.
+
 ## [1.10.1] - 2026-11-06
 
 ### Fixed
