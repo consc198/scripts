@@ -17,7 +17,7 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
 PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
-SCRIPT_VERSION = "1.9.1"
+SCRIPT_VERSION = "1.10.0"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
@@ -322,8 +322,8 @@ def append_plugin_update_history(results, output_path):
     return len(entries)
 
 
-def update_plugins_for_webapp(token, server, app, requested_plugins, dry_run, exclusions):
-    """Resolve the app user and update requested plugins; return JSON-ready rows."""
+def update_plugins_for_webapp(server, app, user, user_error, requested_plugins, dry_run, exclusions):
+    """Run SSH/WP-CLI update work using a username resolved before worker startup."""
     server_id = server["id"]
     base = {"timestamp": datetime.now(timezone.utc).isoformat(), "server_id": server_id,
             "server": server.get("name", f"server-{server_id}"), "server_ip": server.get("ipAddress"),
@@ -345,12 +345,10 @@ def update_plugins_for_webapp(token, server, app, requested_plugins, dry_run, ex
             remaining_plugins.append(requested)
     if not remaining_plugins:
         return excluded_rows
-    try:
-        user = get_webapp_ssh_user(token, server_id, app)
-    except Exception as exc:
+    if user_error:
         failed_rows = [{**base, "run_as_user": None, "plugin_requested": p, "plugin_matched": None,
                         "plugin_version_before": None, "plugin_update_available_version": None,
-                        "plugin_version_after": None, "status": "failed", "message": str(exc)}
+                        "plugin_version_after": None, "status": "failed", "message": user_error}
                        for p in remaining_plugins]
         return excluded_rows + failed_rows
     try:
@@ -360,7 +358,6 @@ def update_plugins_for_webapp(token, server, app, requested_plugins, dry_run, ex
                  "plugin_update_available_version": None, "plugin_version_after": None,
                  "status": "failed", "message": str(exc)} for p in remaining_plugins]
     return excluded_rows + [{**base, "run_as_user": user, **row} for row in rows]
-
 
 def update_wordpress_core(server, webapp, webapp_user, expected_version, dry_run):
     """Update core only when the installed version matches the requested version."""
@@ -754,10 +751,37 @@ def main():
                      for app in webapps_by_server.get(server["id"], [])
                      if app.get("type") == "wordpress"]
         wordpress_count = len(app_tasks)
-        print(f"\nUpdating {len(args.update_plugin)} requested plugin(s) across {wordpress_count} web app(s) using up to {args.workers} workers.")
+
+        # Resolve every distinct RunCloud user sequentially before starting workers.
+        # The same server/user pair is fetched only once, including cached failures.
+        print(f"\nPreparing {wordpress_count} web app(s): resolving RunCloud users sequentially...")
+        user_cache = {}
+        prepared_tasks = []
+        for server, app in app_tasks:
+            remaining_plugins = [plugin for plugin in args.update_plugin
+                                 if not plugin_is_excluded(app, plugin, plugin_exclusions)]
+            if not remaining_plugins:
+                prepared_tasks.append((server, app, None, None))
+                continue
+            user_id = app.get("server_user_id")
+            cache_key = (str(server["id"]), str(user_id))
+            if cache_key not in user_cache:
+                try:
+                    user_cache[cache_key] = (get_webapp_ssh_user(token, server["id"], app), None)
+                except Exception as exc:
+                    user_cache[cache_key] = (None, str(exc))
+            user, user_error = user_cache[cache_key]
+            prepared_tasks.append((server, app, user, user_error))
+            if user_error:
+                print(f"  USER LOOKUP FAILED: {server.get('name', server['id'])} / {app.get('name', app.get('id'))}: {user_error}", file=sys.stderr)
+        print(f"  Resolved {sum(1 for _, _, user, error in prepared_tasks if user)} web app user(s); "
+              f"{sum(1 for _, _, user, error in prepared_tasks if error)} lookup failure(s); "
+              f"{len(user_cache)} unique RunCloud user lookup(s).")
+        print(f"\nUpdating {len(args.update_plugin)} requested plugin(s) across {wordpress_count} web app(s) using up to {args.workers} SSH/WP-CLI workers.")
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
-            futures = [executor.submit(update_plugins_for_webapp, token, server, app, args.update_plugin, args.dry_run, plugin_exclusions)
-                       for server, app in app_tasks]
+            futures = [executor.submit(update_plugins_for_webapp, server, app, user, user_error,
+                                       args.update_plugin, args.dry_run, plugin_exclusions)
+                       for server, app, user, user_error in prepared_tasks]
             for future in as_completed(futures):
                 try:
                     results.extend(future.result())
