@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0] - 2026-11-06
+
+### Changed
+- Complete RunCloud API discovery and user lookups sequentially before starting plugin-update workers.
+- Cache RunCloud user lookups by server ID and user ID for the duration of each run, including failed lookups.
+- Restrict `--workers` concurrency to SSH/WP-CLI plugin-update work; worker threads no longer make RunCloud API requests.
+- Skip RunCloud user lookups for web apps where every requested plugin is excluded.
+
+### Notes
+- A failed user lookup is reused for other web apps sharing the same server/user pair, avoiding repeated requests to a rate-limited endpoint.
+- Live RunCloud API and WordPress server testing has not been performed as part of this change.
+
 ## [1.9.1] - 2026-11-06
 
 ### Fixed
