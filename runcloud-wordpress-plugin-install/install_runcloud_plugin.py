@@ -44,7 +44,22 @@ def api_get(token, path, params=None):
     if result.returncode != 0:
         details = [part for part in (result.stderr.strip(), result.stdout.strip()) if part]
         detail = " | ".join(details) or f"curl exit code {result.returncode}"
-        raise RuntimeError(f"RunCloud API request failed: {detail}")
+        # Cloudflare challenge pages can be tens of kilobytes of HTML. Keep
+        # terminal/report errors concise while retaining status and endpoint.
+        status_match = re.search(r"returned error: (\\d{3})", detail)
+        status_code = status_match.group(1) if status_match else None
+        if status_code == "429":
+            summary = "HTTP 429 - Cloudflare rate limit/challenge"
+        elif status_code in {"403", "503"} and ("Just a moment" in detail or "cloudflare" in detail.lower()):
+            summary = f"HTTP {status_code} - Cloudflare security challenge"
+        else:
+            clean_detail = re.sub(r"<[^>]+>", " ", detail)
+            clean_detail = re.sub(r"\\s+", " ", clean_detail).strip()
+            summary = clean_detail[:240]
+            if len(clean_detail) > 240:
+                summary += "..."
+        endpoint = url.split("?", 1)[0]
+        raise RuntimeError(f"RunCloud API request failed ({summary}) [endpoint: {endpoint}]")
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError as exc:
