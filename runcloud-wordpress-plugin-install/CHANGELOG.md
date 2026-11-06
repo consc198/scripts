@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.1] - 2026-11-06
+
+### Fixed
+- Condense RunCloud API failures so Cloudflare 429 challenge HTML no longer floods terminal output.
+- Include the HTTP status and failed API endpoint in concise error messages; limit other response details to a short snippet.
+
+### Notes
+- This is an output/readability change; it does not bypass Cloudflare rate limits or change API retry behavior.
+- Live RunCloud API testing has not been performed as part of this change.
+
 ## [1.9.0] - 2026-11-05
 
 ### Added
