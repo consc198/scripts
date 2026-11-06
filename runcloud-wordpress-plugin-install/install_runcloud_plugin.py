@@ -17,7 +17,7 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
 PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
-SCRIPT_VERSION = "1.9.0"
+SCRIPT_VERSION = "1.9.1"
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
