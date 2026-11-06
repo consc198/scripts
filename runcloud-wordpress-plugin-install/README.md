@@ -1,6 +1,6 @@
 # RunCloud WordPress Plugin Installer
 
-**Current script version:** `1.8.0` (Semantic Versioning).
+**Current script version:** `1.11.0` (Semantic Versioning).
 
 Check the installed script version without contacting RunCloud or requiring an API token:
 
@@ -14,7 +14,7 @@ Discovers WordPress web applications through the RunCloud API and force-installs
 
 ## Script version and releases
 
-The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.8.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
+The script follows Semantic Versioning (`MAJOR.MINOR.PATCH`), currently **1.11.0**. Check the installed script version with `python3 install_runcloud_plugin.py --version`. The JSON reports include `script_version`. See [CHANGELOG.md](CHANGELOG.md) for release history. To publish a GitHub release, create a tag such as `v1.1.0` pointing to the intended commit, then publish a release from that tag. A version number in the script does not itself create a GitHub tag or release.
 
 ## What it does
 
@@ -147,7 +147,7 @@ python3 install_runcloud_plugin.py --update-plugin akismet --update-plugin wordf
 
 
 
-RunCloud API errors are shortened in terminal output. Cloudflare HTTP 429 responses are summarized with the status and endpoint instead of printing the full HTML challenge page.
+During plugin-update preparation, a live progress bar shows the number and percentage of web apps processed, successful and failed user lookups, excluded apps, and elapsed time. It refreshes in place on interactive terminals and prints periodic progress updates when output is redirected.\n\nRunCloud API errors are shortened in terminal output. Cloudflare HTTP 429 responses are summarized with the status and endpoint instead of printing the full HTML challenge page.
 
 Use `--workers 1` to run SSH/WP-CLI work sequentially, or set a higher value such as `--workers 20` if the servers can handle the additional load. The worker limit applies globally across the selected web apps and does not control RunCloud API traffic: all RunCloud API requests are made sequentially during discovery and preparation, before the worker pool starts. RunCloud user details are cached by server ID and user ID for the duration of the run, avoiding repeated lookups for web apps sharing the same RunCloud user. RunCloud API requests are also globally serialized and paced by default with at least one second between request starts. Transient HTTP errors including 429 are retried by curl up to five times, with exponential backoff and support for the server-provided `Retry-After` delay. Use `--api-delay` to change the minimum interval (for example, `--api-delay 2` for a more conservative two-second interval, or `--api-delay 0` to disable pacing). Each web app uses one WP-CLI plugin-list call before the update, one batch `wp plugin update` command for all matching requested plugins, and one plugin-list call afterward to verify versions. Update results are written to `runcloud-plugin-update.json` by default, or to the path supplied with `--update-output`. Every verified successful update is also appended to `plugin-update-history.txt` beside the script. This separate, append-only tab-separated audit log preserves entries across runs. Each row records the UTC timestamp, server and web-app IDs, server name, site domain, plugin file, and versions before and after the update. Dry-runs, failures, excluded plugins, and plugins already current are not logged. Use `--update-history-file` to choose another location. The report contains one record for each plugin/site combination, with the requested plugin, matched plugin file (if found), status (`updated`, `current`, `not_found`, `would_update`, or `failed`), and message. For installed plugins it also records `plugin_version_before`, `plugin_update_available_version` (when WP-CLI reports one), and `plugin_version_after`. Statuses include `updated`, `already_current`, `not_found`, `would_update`, and `failed`. Use `--dry-run` first to verify the target sites and plugin matches. Update mode cannot be combined with `--remove-plugin` or `--min-wp-version`.
 
