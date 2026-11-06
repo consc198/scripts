@@ -798,7 +798,7 @@ def main():
                 f"Elapsed: {minutes}:{seconds:02d}"
             )
             if progress_tty:
-                print("\\r" + line, end="", flush=True)
+                print("\r" + line, end="", flush=True)
                 if force:
                     print()
             elif force or processed % progress_interval == 0:
@@ -822,7 +822,7 @@ def main():
                 prepared_tasks.append((server, app, user, user_error))
                 if user_error:
                     failed_count += 1
-                    print(f"\\n  USER LOOKUP FAILED: {server.get('name', server['id'])} / {app.get('name', app.get('id'))}: {user_error}", file=sys.stderr)
+                    print(f"\n  USER LOOKUP FAILED: {server.get('name', server['id'])} / {app.get('name', app.get('id'))}: {user_error}", file=sys.stderr)
                 else:
                     resolved_count += 1
             show_preparation_progress(processed)
