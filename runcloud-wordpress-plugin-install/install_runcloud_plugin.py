@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import sys
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,18 +18,24 @@ from pathlib import Path
 RUN_CLOUD_API = "https://manage.runcloud.io/api/v3"
 PLUGIN_URL = "https://raw.githubusercontent.com/consc198/scripts/main/runcloud-wordpress-plugin-install/events-manager-pro.3.9.6.zip"
 PLUGIN_SHA256 = "92dca24f4092934443ea3f74421411e4712b7288eb8c8d0237d880d5228a84f3"
-SCRIPT_VERSION = "1.10.0"
+SCRIPT_VERSION = "1.10.1"
+API_REQUEST_DELAY_SECONDS = 1.0
+API_REQUEST_LOCK = threading.Lock()
+LAST_API_REQUEST_AT = 0.0
 SSH_PORT = 22
 SSH_USER = "root"
 SERVER_DISCOVERY_ATTEMPTS = 3
 
 
 def api_get(token, path, params=None):
-    """Call the RunCloud API using curl."""
+    """Call the RunCloud API serially, with pacing and curl's rate-limit retries."""
+    global LAST_API_REQUEST_AT
     url = f"{RUN_CLOUD_API}{path}"
     cmd = [
         "curl", "--silent", "--show-error", "--fail-with-body",
         "--max-time", "30",
+        # curl retries transient HTTP errors including 429 and honours Retry-After.
+        "--retry", "5", "--retry-max-time", "900",
         "-H", f"Authorization: Bearer {token}",
         "-H", "Accept: application/json",
         "-H", "Content-Type: application/json",
@@ -40,7 +47,17 @@ def api_get(token, path, params=None):
         )
         url = f"{url}?{query}"
     cmd.append(url)
-    result = subprocess.run(cmd, text=True, capture_output=True)
+
+    # Keep all API traffic serialized, even if a future caller uses threads.
+    # The delay is measured between request starts; curl's internal retries
+    # remain inside this lock so no other API request can run during backoff.
+    with API_REQUEST_LOCK:
+        now = time.monotonic()
+        wait = API_REQUEST_DELAY_SECONDS - (now - LAST_API_REQUEST_AT)
+        if LAST_API_REQUEST_AT and wait > 0:
+            time.sleep(wait)
+        LAST_API_REQUEST_AT = time.monotonic()
+        result = subprocess.run(cmd, text=True, capture_output=True)
     if result.returncode != 0:
         details = [part for part in (result.stderr.strip(), result.stdout.strip()) if part]
         detail = " | ".join(details) or f"curl exit code {result.returncode}"
@@ -579,6 +596,7 @@ def main():
     parser.add_argument("--update-plugin", action="append", metavar="PLUGIN", help="Update this installed plugin to the latest available version on selected WordPress apps. Repeat to update multiple plugins; writes a separate JSON report.")
     parser.add_argument("--update-output", default="runcloud-plugin-update.json", help="JSON report path for --update-plugin mode.")
     parser.add_argument("--workers", type=int, default=10, help="Maximum number of web apps to process simultaneously in --update-plugin mode (default: 10).")
+    parser.add_argument("--api-delay", type=float, default=1.0, help="Minimum seconds between RunCloud API request starts (default: 1.0; set 0 to disable pacing).")
     parser.add_argument("--exclusions-file", help="Tab-separated webapp ID, domain, and plugin exclusions file (default: plugin-exclusions.txt beside the script).")
     parser.add_argument("--update-history-file", help="Append-only history of successful plugin updates (default: plugin-update-history.txt beside the script).")
     parser.add_argument("--update-core", action="store_true", help="Update WordPress core to the latest available version only when it matches --current-wp-version.")
@@ -591,6 +609,10 @@ def main():
     args = parser.parse_args()
     if args.workers < 1:
         parser.error("--workers must be at least 1.")
+    if args.api_delay < 0:
+        parser.error("--api-delay cannot be negative.")
+    global API_REQUEST_DELAY_SECONDS
+    API_REQUEST_DELAY_SECONDS = args.api_delay
     exclusions_path = (Path(args.exclusions_file).expanduser() if args.exclusions_file
                        else Path(__file__).resolve().with_name("plugin-exclusions.txt"))
     if args.update_plugin and args.exclusions_file and not exclusions_path.is_file():
