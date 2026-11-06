@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.1] - 2026-11-06
+
+### Fixed
+- Serialize all RunCloud API requests behind a shared lock and enforce a configurable minimum interval between request starts.
+- Add curl retries for transient HTTP failures, including 429, with exponential backoff and support for `Retry-After`.
+- Add `--api-delay` (default: 1 second) to tune the request interval; zero disables the pacing delay.
+
+### Notes
+- Curl retries are limited to five retries per request and a maximum retry window of 15 minutes.
+- This reduces request pressure and respects rate-limit responses; it does not bypass Cloudflare challenges or guarantee that RunCloud's limit will not be reached.
+- Live RunCloud API and WordPress server testing has not been performed as part of this change.
+
 ## [1.10.0] - 2026-11-06
 
 ### Changed
