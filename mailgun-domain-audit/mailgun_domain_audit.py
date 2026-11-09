@@ -674,8 +674,30 @@ def write_runcloud_report(missing, output_path="mailgun_domains_missing_in_runcl
     print(f"RunCloud comparison CSV written to: {output_path}")
     if missing:
         print("\nMAILGUN DOMAINS NOT FOUND IN RUNCLOUD")
+        columns = [
+            ("MAILGUN DOMAIN", "mailgun_domain"),
+            ("RUNCLOUD DOMAIN", "normalized_domain"),
+            ("A RECORD", "a_record"),
+        ]
+        widths = {
+            header: max(
+                len(header),
+                *(len(str(row.get(key, "UNKNOWN") if row.get(key) is not None else "UNKNOWN"))
+                  for row in missing),
+            )
+            for header, key in columns
+        }
+        print("  ".join(header.ljust(widths[header]) for header, _ in columns))
+        print("  ".join("-" * widths[header] for header, _ in columns))
         for row in missing:
-            print(f"{row['mailgun_domain']}\t=>\t{row['normalized_domain']}\t{row.get('a_record', 'UNKNOWN')}")
+            values = [
+                str(row.get(key, "UNKNOWN") if row.get(key) is not None else "UNKNOWN")
+                for _, key in columns
+            ]
+            print("  ".join(
+                value.ljust(widths[header])
+                for value, (header, _) in zip(values, columns)
+            ))
     else:
         print("All normalized Mailgun domains were found in RunCloud.")
 
