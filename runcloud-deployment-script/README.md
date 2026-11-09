@@ -1,5 +1,7 @@
 # RunCloud Deployment Script
 
+**Current version:** `1.1.0` (see [`VERSION`](VERSION)).
+
 Bash-based deployment helper for newly provisioned RunCloud servers. The initial deployment task installs the Zabbix 7.4 agent on Ubuntu 24.04 or Ubuntu 26.04.
 
 ## Requirements
@@ -10,10 +12,21 @@ Bash-based deployment helper for newly provisioned RunCloud servers. The initial
 - The target server's SSH host key already trusted in `~/.ssh/known_hosts`
 - Ubuntu 24.04 or Ubuntu 26.04 on the target server
 
+## Versioning
+
+The project follows [Semantic Versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
+
+- **MAJOR** for incompatible changes to command-line behavior or deployment expectations.
+- **MINOR** for backward-compatible deployment features.
+- **PATCH** for backward-compatible fixes and documentation corrections.
+
+The `VERSION` file is the single source of truth for the script version. Check it with `./runcloud-deployment.sh --version`. Each release should update `VERSION` and add a dated section to `CHANGELOG.md`; release tags should use the `v` prefix (for example, `v1.1.0`).
+
 ## Usage
 
 ```bash
 chmod +x runcloud-deployment.sh
+./runcloud-deployment.sh --version
 ./runcloud-deployment.sh --list
 ./runcloud-deployment.sh
 ./runcloud-deployment.sh --server SERVER_ID
