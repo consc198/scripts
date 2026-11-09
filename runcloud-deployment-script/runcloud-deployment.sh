@@ -9,7 +9,6 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TOKEN_FILE="${SCRIPT_DIR}/token.txt"
 API_BASE="https://manage.runcloud.io/api/v3"
 CONFIG_URL="https://raw.githubusercontent.com/consc198/scripts/main/runcloud-deployment-script/zabbix_agentd.conf"
-ZABBIX_DEB_URL="https://repo.zabbix.com/zabbix/7.4/release/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.4+ubuntu24.04_all.deb"
 
 usage() {
   cat <<'USAGE'
@@ -80,10 +79,9 @@ deploy_zabbix() {
   echo "Connecting as root using your existing SSH access..."
 
   ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
-    -- "root@${host}" 'bash -s' "${ZABBIX_DEB_URL}" "${CONFIG_URL}" <<'REMOTE_SCRIPT'
+    -- "root@${host}" 'bash -s' "${CONFIG_URL}" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
-ZABBIX_DEB_URL="$1"
-CONFIG_URL="$2"
+CONFIG_URL="$1"
 
 echo "[1/6] Checking operating system..."
 if [[ ! -r /etc/os-release ]]; then
@@ -91,10 +89,22 @@ if [[ ! -r /etc/os-release ]]; then
   exit 1
 fi
 . /etc/os-release
-if [[ "${ID:-}" != "ubuntu" || "${VERSION_ID:-}" != "24.04" ]]; then
-  echo "This Zabbix repository package is specifically for Ubuntu 24.04; found ${PRETTY_NAME:-unknown}." >&2
+if [[ "${ID:-}" != "ubuntu" ]]; then
+  echo "This deployment supports Ubuntu 24.04 and Ubuntu 26.04; found ${PRETTY_NAME:-unknown}." >&2
   exit 1
 fi
+case "${VERSION_ID:-}" in
+  24.04)
+    ZABBIX_DEB_URL="https://repo.zabbix.com/zabbix/7.4/release/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.4+ubuntu24.04_all.deb"
+    ;;
+  26.04)
+    ZABBIX_DEB_URL="https://repo.zabbix.com/zabbix/7.4/release/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.4+ubuntu26.04_all.deb"
+    ;;
+  *)
+    echo "Unsupported Ubuntu version: ${PRETTY_NAME:-unknown}. Supported versions are 24.04 and 26.04." >&2
+    exit 1
+    ;;
+esac
 
 echo "[2/6] Downloading and installing Zabbix 7.4 repository package..."
 tmp_deb="$(mktemp /tmp/zabbix-release.XXXXXX.deb)"
