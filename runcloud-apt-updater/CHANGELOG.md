@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0] - 2026-11-09
+
+### Added
+- Add `--journal-limit` to persistently cap systemd journal usage at 500MB, restart journald, and vacuum existing archived logs.
+- Allow journal maintenance to run by itself or alongside package checks/upgrades.
+
+
 All notable changes to RunCloud APT Updater are documented here.
 
 ## [1.3.2] - 2026-10-22
