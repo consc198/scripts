@@ -966,6 +966,7 @@ def main():
 
     results = []
     cloudflare_zones = {}
+    cloudflare_token = None
     if run_dns_check:
         cloudflare_token = load_cloudflare_api_key()
         if not cloudflare_token:
