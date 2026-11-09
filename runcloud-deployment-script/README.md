@@ -23,7 +23,7 @@ The default mode presents an interactive server list and asks for confirmation b
 
 ## Zabbix deployment
 
-The script checks the target OS before making changes, then selects the official Zabbix 7.4 repository package for Ubuntu 24.04 or Ubuntu 26.04. It installs `zabbix-agent`, downloads the included `zabbix_agentd.conf` from this repository, waits 60 seconds, restarts the service, verifies it is active, and enables it at boot. Other OS versions are rejected before installation.
+The script checks the target OS before making changes, then selects the official Zabbix 7.4 repository package for Ubuntu 24.04 or Ubuntu 26.04. It installs `zabbix-agent`, downloads the included `zabbix_agentd.conf` from this repository, waits 60 seconds, restarts the service, verifies it is active, and enables it at boot. It also creates `/etc/systemd/journald.conf.d/99-runcloud-apt-updater.conf` with `SystemMaxUse=500M`, restarts `systemd-journald`, and verifies the service is active. Other OS versions are rejected before installation.
 
 The configuration retains the existing Zabbix server addresses (`23.88.108.39`) and agent settings.
 
