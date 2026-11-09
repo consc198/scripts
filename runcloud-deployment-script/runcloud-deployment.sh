@@ -7,6 +7,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TOKEN_FILE="${SCRIPT_DIR}/token.txt"
+VERSION_FILE="${SCRIPT_DIR}/VERSION"
 API_BASE="https://manage.runcloud.io/api/v3"
 CONFIG_URL="https://raw.githubusercontent.com/consc198/scripts/main/runcloud-deployment-script/zabbix_agentd.conf"
 
@@ -15,6 +16,7 @@ usage() {
 RunCloud Deployment Script
 
 Usage:
+  ./runcloud-deployment.sh --version
   ./runcloud-deployment.sh --list
   ./runcloud-deployment.sh
   ./runcloud-deployment.sh --server SERVER_ID
@@ -24,6 +26,16 @@ USAGE
 }
 
 die() { echo "ERROR: $*" >&2; exit 1; }
+
+if [[ "${1:-}" == "--version" || "${1:-}" == "-V" ]]; then
+  if [[ -r "$VERSION_FILE" ]]; then
+    version="$(tr -d '\r\n' < "$VERSION_FILE")"
+    printf 'RunCloud Deployment Script v%s\n' "$version"
+  else
+    die "Version file not found: $VERSION_FILE"
+  fi
+  exit 0
+fi
 
 for cmd in curl jq ssh; do
   command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
