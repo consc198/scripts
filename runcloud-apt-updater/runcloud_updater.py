@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-VERSION = "1.3.2"
+VERSION = "1.4.0"
 API_BASE = "https://manage.runcloud.io"
 DEFAULT_ENDPOINT = "/api/v3/servers"
 FAILURE_LOG = Path(__file__).resolve().with_name("failures.log")
@@ -199,6 +199,8 @@ def main() -> int:
                         help="refresh APT indexes and install available upgrades")
     parser.add_argument("--packages-only", action="store_true",
                         help="limit --check/--apply to nano, ubuntu-advantage-tools, ubuntu-pro-client, and ubuntu-pro-client-l10n")
+    parser.add_argument("--journal-limit", action="store_true",
+                        help="persistently limit systemd journal usage to 500MB and vacuum existing archived logs")
     parser.add_argument("--api-url", default=os.getenv("RUNCLOUD_API_URL", API_BASE + DEFAULT_ENDPOINT),
                         help="server-list endpoint (default: RunCloud v3 servers endpoint)")
     parser.add_argument("--timeout", type=int, default=1800, help="per-server command timeout in seconds")
@@ -256,26 +258,42 @@ def main() -> int:
         print(f"ERROR: server ID {args.server!r} was not found.", file=sys.stderr)
         return 1
 
-    if not args.check and not args.apply:
-        print("Inventory only. Use --check to simulate upgrades or --apply to install them.")
+    if not args.check and not args.apply and not args.journal_limit:
+        print("Inventory only. Use --check to simulate upgrades, --apply to install them, or --journal-limit to cap journal usage at 500MB.")
         return 0
 
-    targeted_packages = (
-        "nano ubuntu-advantage-tools ubuntu-pro-client ubuntu-pro-client-l10n"
-    )
-    if args.packages_only:
-        package_action = (
-            f"apt-get -s install --only-upgrade {targeted_packages}" if args.check
-            else f"DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade {targeted_packages}"
+    remote_commands: list[str] = []
+    operations: list[str] = []
+    if args.check or args.apply:
+        targeted_packages = (
+            "nano ubuntu-advantage-tools ubuntu-pro-client ubuntu-pro-client-l10n"
         )
-        operation = "targeted package simulation" if args.check else "targeted package update"
-    else:
-        package_action = (
-            "apt-get -s upgrade" if args.check
-            else "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
+        if args.packages_only:
+            package_action = (
+                f"apt-get -s install --only-upgrade {targeted_packages}" if args.check
+                else f"DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade {targeted_packages}"
+            )
+            operations.append("targeted package simulation" if args.check else "targeted package update")
+        else:
+            package_action = (
+                "apt-get -s upgrade" if args.check
+                else "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
+            )
+            operations.append("simulation" if args.check else "upgrade")
+        remote_commands.extend(["apt-get update", package_action])
+
+    if args.journal_limit:
+        journald_config = "/etc/systemd/journald.conf.d/99-runcloud-apt-updater.conf"
+        remote_commands.append(
+            "install -d /etc/systemd/journald.conf.d && "
+            f"printf '%s\\n' '[Journal]' 'SystemMaxUse=500M' > {journald_config} && "
+            "systemctl restart systemd-journald && "
+            "journalctl --vacuum-size=500M"
         )
-        operation = "simulation" if args.check else "upgrade"
-    remote_command = f"set -eu; apt-get update; {package_action}"
+        operations.append("500MB journal limit and vacuum")
+
+    operation = " + ".join(operations)
+    remote_command = "set -eu; " + "; ".join(remote_commands)
     def update_server(server: dict[str, Any]) -> tuple[str, bool]:
         name = get_server_name(server)
         host = get_server_host(server)
