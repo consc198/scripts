@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.22] - 2026-11-09
+
+### Added
+- During `--runcloud-check`, look up Cloudflare A records for Mailgun domains missing from RunCloud and include the IP address(es) in the terminal summary and CSV report.
+
 ## [0.3.21] - 2026-10-23
 
 ### Changed
