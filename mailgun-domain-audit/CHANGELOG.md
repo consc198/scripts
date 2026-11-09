@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.23] - 2026-11-09
+
+### Changed
+- Fall back to a system DNS A-record lookup when a missing RunCloud domain is not covered by any Cloudflare zone.
+
 ## [0.3.22] - 2026-11-09
 
 ### Added
