@@ -1,6 +1,6 @@
 # RunCloud Deployment Script
 
-Bash-based deployment helper for newly provisioned RunCloud servers. The initial deployment task installs the Zabbix 7.4 agent on Ubuntu 24.04.
+Bash-based deployment helper for newly provisioned RunCloud servers. The initial deployment task installs the Zabbix 7.4 agent on Ubuntu 24.04 or Ubuntu 26.04.
 
 ## Requirements
 
@@ -8,7 +8,7 @@ Bash-based deployment helper for newly provisioned RunCloud servers. The initial
 - RunCloud API token in `token.txt` beside the script (one line; never commit this file)
 - Root SSH access to the target server, already available through your SSH configuration/agent
 - The target server's SSH host key already trusted in `~/.ssh/known_hosts`
-- Ubuntu 24.04 on the target server
+- Ubuntu 24.04 or Ubuntu 26.04 on the target server
 
 ## Usage
 
@@ -23,7 +23,7 @@ The default mode presents an interactive server list and asks for confirmation b
 
 ## Zabbix deployment
 
-The script downloads and installs the official Zabbix 7.4 Ubuntu 24.04 repository package, installs `zabbix-agent`, downloads the included `zabbix_agentd.conf` from this repository, waits 60 seconds, restarts the service, verifies it is active, and enables it at boot.
+The script checks the target OS before making changes, then selects the official Zabbix 7.4 repository package for Ubuntu 24.04 or Ubuntu 26.04. It installs `zabbix-agent`, downloads the included `zabbix_agentd.conf` from this repository, waits 60 seconds, restarts the service, verifies it is active, and enables it at boot. Other OS versions are rejected before installation.
 
 The configuration retains the existing Zabbix server addresses (`23.88.108.39`) and agent settings.
 
