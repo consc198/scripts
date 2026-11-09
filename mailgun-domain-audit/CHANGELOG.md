@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.24] - 2026-11-09
+
+### Changed
+- Align the RunCloud missing-domain terminal summary into calculated-width columns for Mailgun domain, normalized domain, and A-record result.
+
 ## [0.3.23] - 2026-11-09
 
 ### Changed
