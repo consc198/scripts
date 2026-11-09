@@ -83,7 +83,7 @@ deploy_zabbix() {
 set -Eeuo pipefail
 CONFIG_URL="$1"
 
-echo "[1/6] Checking operating system..."
+echo "[1/7] Checking operating system..."
 if [[ ! -r /etc/os-release ]]; then
   echo "Cannot identify operating system." >&2
   exit 1
@@ -106,33 +106,44 @@ case "${VERSION_ID:-}" in
     ;;
 esac
 
-echo "[2/6] Downloading and installing Zabbix 7.4 repository package..."
+echo "[2/7] Downloading and installing Zabbix 7.4 repository package..."
 tmp_deb="$(mktemp /tmp/zabbix-release.XXXXXX.deb)"
 trap 'rm -f "$tmp_deb"' EXIT
 curl --fail --location --silent --show-error --retry 3 \
   -o "$tmp_deb" "$ZABBIX_DEB_URL"
 dpkg -i "$tmp_deb"
 
-echo "[3/6] Updating APT and installing Zabbix Agent..."
+echo "[3/7] Updating APT and installing Zabbix Agent..."
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y zabbix-agent
 
-echo "[4/6] Installing the Zabbix agent configuration..."
+echo "[4/7] Installing the Zabbix agent configuration..."
 curl --fail --location --silent --show-error --retry 3 \
   -o /etc/zabbix/zabbix_agentd.conf "$CONFIG_URL"
 chown root:root /etc/zabbix/zabbix_agentd.conf
 chmod 0644 /etc/zabbix/zabbix_agentd.conf
 
-echo "[5/6] Waiting 60 seconds before restarting the agent..."
+echo "[5/7] Waiting 60 seconds before restarting the agent..."
 sleep 60
 
-echo "[6/6] Restarting and verifying Zabbix Agent..."
+echo "[6/7] Restarting and verifying Zabbix Agent..."
 systemctl restart zabbix-agent
 systemctl is-active --quiet zabbix-agent
 systemctl enable zabbix-agent
 echo "Zabbix Agent installation completed successfully."
 
-  echo "SUCCESS: Zabbix Agent deployed on $name ($host)"
+echo "[7/7] Limiting systemd journal disk usage to 500M..."
+install -d -m 0755 /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/99-runcloud-apt-updater.conf <<'JOURNALD_CONF'
+[Journal]
+SystemMaxUse=500M
+JOURNALD_CONF
+chmod 0644 /etc/systemd/journald.conf.d/99-runcloud-apt-updater.conf
+systemctl restart systemd-journald
+systemctl is-active --quiet systemd-journald
+echo "Journald configuration applied; SystemMaxUse=500M."
+
+echo "SUCCESS: Zabbix Agent and journald configuration deployed on $name ($host)"
 }
 
 server_arg=""
