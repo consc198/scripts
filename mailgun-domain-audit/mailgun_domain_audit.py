@@ -279,7 +279,7 @@ def load_cloudflare_api_key():
 
 def get_cloudflare_zones(token):
     """Fetch all Cloudflare zone names over IPv4 using curl."""
-    zones = set()
+    zones = {}
     page = 1
     per_page = 50
 
@@ -335,8 +335,9 @@ def get_cloudflare_zones(token):
             raise ValueError("Unexpected Cloudflare response: 'result' is not a list")
         for item in items:
             name = item.get("name") if isinstance(item, dict) else None
-            if name:
-                zones.add(str(name).strip().lower().rstrip("."))
+            zone_id = item.get("id") if isinstance(item, dict) else None
+            if name and zone_id:
+                zones[str(name).strip().lower().rstrip(".")] = str(zone_id)
         page_info = payload.get("result_info", {})
         total_pages = page_info.get("total_pages")
         if total_pages is not None:
@@ -366,9 +367,70 @@ def cloudflare_zone_status(domain, zones):
     normalized = normalize_cloudflare_lookup_domain(domain)
     if not normalized:
         return "Missing"
-    if normalized in zones or any(normalized.endswith("." + zone) for zone in zones):
+    zone_names = zones.keys() if isinstance(zones, dict) else zones
+    if normalized in zone_names or any(normalized.endswith("." + zone) for zone in zone_names):
         return "Found"
     return "Missing"
+
+
+def cloudflare_get_json(url, token):
+    """GET a Cloudflare API URL over IPv4, keeping the token out of argv."""
+    def curl_quote(value):
+        return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "") + '"'
+
+    config = "\n".join([
+        "silent",
+        "show-error",
+        f"url = {curl_quote(url)}",
+        f"header = {curl_quote('Accept: application/json')}",
+        f"header = {curl_quote(f'Authorization: Bearer {token}')}",
+        'write-out = "\\nHTTPSTATUS:%{http_code}"',
+        "",
+    ])
+    try:
+        response = subprocess.run(
+            ["curl", "--ipv4", "--config", "-"],
+            input=config, text=True, capture_output=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"Unable to run curl for Cloudflare IPv4 request: {exc}") from exc
+    if response.returncode != 0:
+        detail = response.stderr.strip() or f"curl exit code {response.returncode}"
+        raise RuntimeError(f"Cloudflare curl request failed: {detail}")
+    body, marker, status_text = response.stdout.rpartition("\nHTTPSTATUS:")
+    if not marker or not status_text.strip().isdigit():
+        raise RuntimeError("Could not read HTTP status from Cloudflare curl response.")
+    status_code = int(status_text.strip())
+    if status_code < 200 or status_code >= 300:
+        detail = body.strip()[:1000]
+        suffix = f"; response body: {detail}" if detail else ""
+        raise RuntimeError(f"Cloudflare HTTP {status_code} for {url}{suffix}")
+    try:
+        payload = json.loads(body)
+    except ValueError as exc:
+        raise RuntimeError(f"Cloudflare returned invalid JSON for {url}: {exc}") from exc
+    if payload.get("success") is not True:
+        raise RuntimeError(f"Cloudflare API reported an unsuccessful response: {payload.get('errors', [])}")
+    return payload
+
+
+def get_cloudflare_a_record(domain, zones, token):
+    """Return A-record IPs for the normalized domain using its most specific zone."""
+    normalized = normalize_cloudflare_lookup_domain(domain)
+    matches = [(zone, zone_id) for zone, zone_id in zones.items()
+               if normalized == zone or normalized.endswith("." + zone)]
+    if not matches:
+        return "NO_CLOUDFLARE_ZONE"
+    zone, zone_id = max(matches, key=lambda item: len(item[0]))
+    url = (f"{CLOUDFLARE_BASE_URL}/zones/{quote(zone_id, safe='')}/dns_records"
+           f"?type=A&name={quote(normalized, safe='')}&per_page=100")
+    records = cloudflare_get_json(url, token).get("result", [])
+    if not isinstance(records, list):
+        raise ValueError("Unexpected Cloudflare DNS response: 'result' is not a list")
+    addresses = sorted({str(record.get("content", "")).strip() for record in records
+                        if isinstance(record, dict) and str(record.get("type", "")).upper() == "A"
+                        and record.get("content")})
+    return ", ".join(addresses) if addresses else "NO_A_RECORD"
 
 
 def normalize_mailgun_domain(domain):
@@ -590,6 +652,7 @@ def write_runcloud_report(missing, output_path="mailgun_domains_missing_in_runcl
         "mailgun_domain",
         "normalized_domain",
         "mailgun_state",
+        "a_record",
         "accepted_outgoing_count",
         "accepted_period_utc",
         "accepted_metrics_error",
@@ -602,7 +665,7 @@ def write_runcloud_report(missing, output_path="mailgun_domains_missing_in_runcl
     if missing:
         print("\nMAILGUN DOMAINS NOT FOUND IN RUNCLOUD")
         for row in missing:
-            print(f"{row['mailgun_domain']}\t=>\t{row['normalized_domain']}")
+            print(f"{row['mailgun_domain']}\t=>\t{row['normalized_domain']}\t{row.get('a_record', 'UNKNOWN')}")
     else:
         print("All normalized Mailgun domains were found in RunCloud.")
 
@@ -902,7 +965,7 @@ def main():
         return 1
 
     results = []
-    cloudflare_zones = set()
+    cloudflare_zones = {}
     if run_dns_check:
         cloudflare_token = load_cloudflare_api_key()
         if not cloudflare_token:
@@ -943,6 +1006,20 @@ def main():
             return 1
         missing = report_mailgun_domains_missing_from_runcloud(domains, runcloud_domains)
         if missing:
+            if not cloudflare_token:
+                cloudflare_token = load_cloudflare_api_key()
+                if not cloudflare_token:
+                    return 1
+                try:
+                    cloudflare_zones = get_cloudflare_zones(cloudflare_token)
+                except (requests.RequestException, ValueError, RuntimeError) as exc:
+                    print(f"ERROR retrieving Cloudflare zones: {exc}", file=sys.stderr)
+                    return 1
+            for row in missing:
+                try:
+                    row["a_record"] = get_cloudflare_a_record(row["mailgun_domain"], cloudflare_zones, cloudflare_token)
+                except (ValueError, RuntimeError) as exc:
+                    row["a_record"] = "LOOKUP_ERROR: " + str(exc)
             _, _, period_label = current_month_utc_period()
             try:
                 accepted_counts, period_label = get_accepted_outgoing_by_domain()
