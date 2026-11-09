@@ -80,8 +80,10 @@ deploy_zabbix() {
   echo "Connecting as root using your existing SSH access..."
 
   ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
-    -- "root@${host}" 'bash -s' <<REMOTE_SCRIPT
+    -- "root@${host}" 'bash -s' "${ZABBIX_DEB_URL}" "${CONFIG_URL}" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
+ZABBIX_DEB_URL="$1"
+CONFIG_URL="$2"
 
 echo "[1/6] Checking operating system..."
 if [[ ! -r /etc/os-release ]]; then
@@ -98,7 +100,7 @@ echo "[2/6] Downloading and installing Zabbix 7.4 repository package..."
 tmp_deb="$(mktemp /tmp/zabbix-release.XXXXXX.deb)"
 trap 'rm -f "$tmp_deb"' EXIT
 curl --fail --location --silent --show-error --retry 3 \
-  -o "$tmp_deb" "${ZABBIX_DEB_URL}"
+  -o "$tmp_deb" "$ZABBIX_DEB_URL"
 dpkg -i "$tmp_deb"
 
 echo "[3/6] Updating APT and installing Zabbix Agent..."
@@ -107,7 +109,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y zabbix-agent
 
 echo "[4/6] Installing the Zabbix agent configuration..."
 curl --fail --location --silent --show-error --retry 3 \
-  -o /etc/zabbix/zabbix_agentd.conf "${CONFIG_URL}"
+  -o /etc/zabbix/zabbix_agentd.conf "$CONFIG_URL"
 chown root:root /etc/zabbix/zabbix_agentd.conf
 chmod 0644 /etc/zabbix/zabbix_agentd.conf
 
@@ -119,7 +121,6 @@ systemctl restart zabbix-agent
 systemctl is-active --quiet zabbix-agent
 systemctl enable zabbix-agent
 echo "Zabbix Agent installation completed successfully."
-REMOTE_SCRIPT
 
   echo "SUCCESS: Zabbix Agent deployed on $name ($host)"
 }
