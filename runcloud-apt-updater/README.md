@@ -1,6 +1,6 @@
 # RunCloud APT Updater
 
-**Current version:** `1.3.2` — see [`CHANGELOG.md`](CHANGELOG.md) for release history.
+**Current version:** `1.4.0` — see [`CHANGELOG.md`](CHANGELOG.md) for release history.
 
 Discover RunCloud servers using curl, then optionally connect over SSH as root to update Debian/Ubuntu packages. The script uses Python's standard library only; it does not use the requests library.
 
@@ -25,7 +25,10 @@ python3 runcloud_updater.py --all --check --workers 5
 python3 runcloud_updater.py --all --apply --workers 5
 python3 runcloud_updater.py --all --check --packages-only --workers 5
 python3 runcloud_updater.py --all --apply --packages-only --workers 5
+python3 runcloud_updater.py --all --journal-limit --workers 5
 ~~~
+
+`--journal-limit` installs a systemd journald drop-in at `/etc/systemd/journald.conf.d/99-runcloud-apt-updater.conf` with `SystemMaxUse=500M`, restarts `systemd-journald`, and immediately vacuums archived journal files with `journalctl --vacuum-size=500M`. This persistently caps journal disk usage at approximately 500MB; it can be run alone with `--all` or `--server SERVER_ID`, and can also be combined with `--check` or `--apply`.
 
 `--packages-only` restricts package operations to `nano`, `ubuntu-advantage-tools`, `ubuntu-pro-client`, and `ubuntu-pro-client-l10n`; it must be combined with `--check` or `--apply`. It uses APT `--only-upgrade`, so it will not install any of those packages if they are absent. Without this flag, the regular full-system behavior is unchanged. `--workers N` sets the maximum number of servers processed concurrently (default `5`; allowed range `1`–`100`). Start conservatively, for example with `--workers 5`, to avoid overwhelming servers or network capacity. `--list` only lists servers. `--check` refreshes APT indexes and simulates upgrades without installing them. `--apply` installs available upgrades. Servers are processed sequentially. SSH strict host-key checking is enabled, so confirm `known_hosts` is populated before running.
 
