@@ -22,6 +22,7 @@ import os
 import sys
 import time
 import subprocess
+import socket
 from datetime import datetime, timezone
 from email.utils import format_datetime
 from urllib.parse import quote
@@ -420,7 +421,16 @@ def get_cloudflare_a_record(domain, zones, token):
     matches = [(zone, zone_id) for zone, zone_id in zones.items()
                if normalized == zone or normalized.endswith("." + zone)]
     if not matches:
-        return "NO_CLOUDFLARE_ZONE"
+        # No Cloudflare zone covers this name; fall back to the system DNS
+        # resolver so externally hosted domains still get an A-record lookup.
+        try:
+            addresses = sorted({
+                info[4][0]
+                for info in socket.getaddrinfo(normalized, None, socket.AF_INET, socket.SOCK_STREAM)
+            })
+        except socket.gaierror:
+            addresses = []
+        return ", ".join(addresses) if addresses else "NO_A_RECORD"
     zone, zone_id = max(matches, key=lambda item: len(item[0]))
     url = (f"{CLOUDFLARE_BASE_URL}/zones/{quote(zone_id, safe='')}/dns_records"
            f"?type=A&name={quote(normalized, safe='')}&per_page=100")
