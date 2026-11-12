@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.26] - 2026-11-12
+
+### Changed
+- Trigger Mailgun's `PUT /v4/domains/{name}/verify` endpoint for each domain during the DNS audit so SPF/DKIM/tracking classifications use freshly refreshed Mailgun DNS results; record per-domain verification errors in the CSV.
+- Keep DMARC verification separate, since Mailgun's domain verification endpoint checks A, CNAME, SPF, DKIM, and MX records rather than DMARC.
+
 ## [0.3.25] - 2026-11-12
 
 ### Added
