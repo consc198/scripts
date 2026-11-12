@@ -58,6 +58,14 @@ The audit fetches all zone pages from the Cloudflare API using `curl --ipv4`, so
 
 If the token is absent or Cloudflare cannot be queried, the audit stops with an error rather than marking every domain as `Missing` based on an incomplete lookup. The token file is ignored by Git.
 
+You can explicitly create missing DMARC records for domains covered by Cloudflare by adding `--add-missing-dmarc` to the DNS audit:
+
+```bash
+python3 mailgun_domain_audit.py --dns-check --add-missing-dmarc
+```
+
+This mode uses Mailgun's expected DMARC value and creates a TXT record at `_dmarc.<mailgun-domain>` only when Mailgun reports DMARC as missing and the domain is covered by a Cloudflare zone. It checks Cloudflare first and never overwrites any existing DNS record at that name. Existing records are reported as `ALREADY_EXISTS`; domains outside Cloudflare are reported as `NOT_IN_CLOUDFLARE`; invalid or unavailable Mailgun values are not published. Creation outcomes are shown in the terminal and in the DNS audit CSV under `dmarc_cloudflare_action`. The regular DNS audit remains read-only unless this flag is explicitly supplied. After a record is created, run the DNS audit again later to let Mailgun re-check it; DNS propagation can take time, and Mailgun's DNS page provides a manual **Check status** action if verification remains stale.
+
 ### Optional RunCloud comparison
 
 To enable the comparison, create `runcloud_apikey.txt` beside the script and put your RunCloud API token on one line. RunCloud API access must be enabled for your account. The script always reads the token from `runcloud_apikey.txt`; `RUNCLOUD_API_KEY` is not used.
@@ -68,15 +76,7 @@ Compare Mailgun domains against RunCloud without running the DNS/DMARC audit:
 python3 mailgun_domain_audit.py --runcloud-check
 ```
 
-The script still retrieves the Mailgun domain list for comparison, but skips per-domain DNS and DMARC requests. You can explicitly create missing DMARC records for domains covered by Cloudflare by adding `--add-missing-dmarc` to the DNS audit:
-
-```bash
-python3 mailgun_domain_audit.py --dns-check --add-missing-dmarc
-```
-
-This mode uses Mailgun's expected DMARC value and creates a TXT record at `_dmarc.<mailgun-domain>` only when Mailgun reports DMARC as missing and the domain is covered by a Cloudflare zone. It checks Cloudflare first and never overwrites an existing TXT or CNAME record at that name. Existing records are reported as `ALREADY_EXISTS`; domains outside Cloudflare are reported as `NOT_IN_CLOUDFLARE`; invalid or unavailable Mailgun values are not published. Creation outcomes are shown in the terminal and in the DNS audit CSV under `dmarc_cloudflare_action`. The regular DNS audit remains read-only unless this flag is explicitly supplied. After a record is created, run the DNS audit again later to let Mailgun re-check it; DNS propagation can take time, and Mailgun's DNS page provides a manual **Check status** action if verification remains stale.
-
-To run both checks in one invocation, use:
+The script still retrieves the Mailgun domain list for comparison, but skips per-domain DNS and DMARC requests.To run both checks in one invocation, use:
 
 ```bash
 python3 mailgun_domain_audit.py --dns-check --runcloud-check
