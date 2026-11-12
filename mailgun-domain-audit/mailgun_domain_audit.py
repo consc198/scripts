@@ -104,6 +104,35 @@ def api_get(path, params=None, retries=3):
     raise RuntimeError(f"Request failed: {url}")
 
 
+def api_put(path, retries=3):
+    """PUT to a Mailgun endpoint without a request body, retrying transient failures."""
+    url = f"{BASE_URL}{path}"
+    for attempt in range(retries):
+        try:
+            response = SESSION.put(url, timeout=30)
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt < retries - 1:
+                    retry_after = response.headers.get("Retry-After")
+                    try:
+                        delay = max(1, int(retry_after)) if retry_after else 2 ** (attempt + 1)
+                    except ValueError:
+                        delay = 2 ** (attempt + 1)
+                    print(
+                        f"Temporary HTTP {response.status_code}; retrying in {delay}s...",
+                        file=sys.stderr,
+                    )
+                    time.sleep(delay)
+                    continue
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException:
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            raise
+    raise RuntimeError(f"Request failed: {url}")
+
+
 def api_post(path, json_body, retries=3):
     """POST to a Mailgun endpoint, retrying rate limits and transient server errors."""
     url = f"{BASE_URL}{path}"
@@ -215,18 +244,16 @@ def get_all_domains():
     return domains
 
 
-def get_domain_details(domain):
-    # Explicitly request DNS records; some responses omit them unless h:with_dns is set.
-    data = api_get(
-        f"/v4/domains/{quote(domain, safe='')}",
-        params={"h:with_dns": "true"},
-    )
-    # Mailgun returns DNS records at the top level, alongside the nested domain object.
+def verify_domain_dns(domain):
+    """Trigger Mailgun's live DNS verification and return the updated domain details."""
+    data = api_put(f"/v4/domains/{quote(domain, safe='')}/verify")
+    # Mailgun returns DNS record arrays alongside the nested domain object.
     details = data.get("domain", data)
-    if isinstance(details, dict):
-        for key in ("sending_dns_records", "receiving_dns_records"):
-            if key not in details and key in data:
-                details[key] = data[key]
+    if not isinstance(details, dict):
+        raise ValueError(f"Unexpected Mailgun verification response for {domain}")
+    for key in ("sending_dns_records", "receiving_dns_records"):
+        if key not in details and key in data:
+            details[key] = data[key]
     return details
 
 
@@ -824,8 +851,15 @@ def audit_domain(domain_obj, cloudflare_zones):
     domain = domain_obj["name"]
     print(f"Checking {domain}...", file=sys.stderr)
 
-    details = get_domain_details(domain)
-    dns = classify_sending_dns(details)
+    dns_verify_error = ""
+    try:
+        details = verify_domain_dns(domain)
+        dns = classify_sending_dns(details)
+    except (requests.RequestException, ValueError, RuntimeError) as exc:
+        details = {}
+        dns = {"spf": "ERROR", "dkim": "ERROR", "tracking": "ERROR"}
+        dns_verify_error = str(exc)
+        print(f"Mailgun DNS verification failed for {domain}: {exc}", file=sys.stderr)
     dmarc_response = get_dmarc(domain)
 
     configured = dmarc_response.get("configured")
@@ -849,6 +883,7 @@ def audit_domain(domain_obj, cloudflare_zones):
         "dmarc_current": dmarc_response.get("current", ""),
         "dmarc_expected": dmarc_response.get("entry", ""),
         "dmarc_error": dmarc_response.get("error", ""),
+        "dns_verify_error": dns_verify_error,
     }
 
 
@@ -1084,6 +1119,7 @@ def main():
                     "dmarc_current": "",
                     "dmarc_expected": "",
                     "dmarc_error": str(exc),
+                    "dns_verify_error": str(exc),
                 })
 
     if args.add_missing_dmarc:
@@ -1167,7 +1203,7 @@ def main():
     if run_dns_check:
         fields = [
             "domain", "mailgun_state", "spf", "dkim", "tracking", "dmarc",
-            "status", "Cloudflare", "dmarc_current", "dmarc_expected", "dmarc_error",
+            "status", "Cloudflare", "dmarc_current", "dmarc_expected", "dmarc_error", "dns_verify_error",
             "dmarc_cloudflare_action",
         ]
         with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as handle:
