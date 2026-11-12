@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.0] - 2026-11-12
+
+### Added
+- Added read-only `--audit-webapp-traffic` to aggregate client IP request counts across all selected servers' RunCloud Nginx webapp access logs for the last 48 hours.
+- Reports the top 20 IPs across all webapps, including request counts and the number of webapps and servers each IP appeared on.
+- Includes active access logs and rotated compressed access logs, and supports restricting the audit with `--server-id`.
+
+
 ## [1.9.1] - 2026-11-05
 
 ### Added
