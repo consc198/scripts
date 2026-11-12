@@ -1,6 +1,6 @@
 # RunCloud PHP Upgrader
 
-**Current version: 1.9.1**
+**Current version: 1.10.0**
 
 Find RunCloud web applications running selected PHP version(s) and change them to a target PHP version. HTTP requests are made using the `curl` command-line tool; Python's `requests` package is not required. A terminal progress bar shows webapp scan progress. The optional `--update-php-cli` flag also updates the server-level PHP-CLI version using the same source and target version options.
 
@@ -87,6 +87,24 @@ python3 upgrade_runcloud_php.py --webapps-file webapps.txt --source-php php81rc 
 ```
 
 The script reports listed names that were not found and listed webapps that do not use one of the selected source PHP versions. If the same exact webapp name exists on multiple servers, each matching webapp is eligible. The text-file filter selects webapps only; if you explicitly add `--update-php-cli`, server-level PHP-CLI updates are still handled separately. The file is read from the path you provide.
+
+### Audit the busiest client IPs across all webapps
+
+Use `--audit-webapp-traffic` to scan every selected server's RunCloud Nginx webapp access logs and report the 20 client IP addresses with the most requests across all webapps combined, limited to the last 48 hours:
+
+```bash
+python3 upgrade_runcloud_php.py --audit-webapp-traffic
+```
+
+The audit reads active logs matching `/home/*/logs/nginx/*_access.log` and rotated compressed access logs matching `*_access.log-*.gz`, so requests from the full 48-hour window are included when logs have rotated. It parses each request timestamp and counts the IP in the first field of the access-log line. The summary ranks IPs by total requests across all scanned webapps and shows how many distinct webapps and servers each IP appeared on.
+
+You can restrict the audit to one RunCloud server:
+
+```bash
+python3 upgrade_runcloud_php.py --audit-webapp-traffic --server-id 123
+```
+
+This is a read-only operation; it does not change webapp settings or log files. It requires the same non-interactive root SSH access used by `--scan-max-children`, and Python 3 on each server. If a server uses a reverse proxy, the reported address depends on the client IP value written into the first access-log field (for example, whether Nginx real-IP handling is configured).
 
 ### Scan PHP-FPM logs for max_children limit hits
 
