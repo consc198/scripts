@@ -374,7 +374,7 @@ from pathlib import Path
 
 cutoff = float(sys.argv[1])
 now = float(sys.argv[2])
-pattern = re.compile(r'^(\\S+)\\s+\\S+\\s+\\S+\\s+\\[([^]]+)\\]')
+pattern = re.compile(r'^(\S+)\s+\S+\s+\S+\s+\[([^]]+)\]')
 counts = {}
 files_scanned = 0
 lines_scanned = 0
@@ -445,7 +445,8 @@ print(json.dumps({
 
 def run_webapp_traffic_audit(servers):
     """Aggregate the busiest client IPs across all selected servers' webapp logs."""
-    cutoff_epoch = datetime.now().timestamp() - (48 * 60 * 60)
+    now_epoch = datetime.now().timestamp()
+    cutoff_epoch = now_epoch - (48 * 60 * 60)
     cutoff_text = datetime.fromtimestamp(cutoff_epoch).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     totals = {}
     files_scanned = lines_scanned = successful_servers = 0
@@ -455,7 +456,7 @@ def run_webapp_traffic_audit(servers):
         server_name = server.get("name", str(server.get("id", "unknown")))
         print(f"Scanning traffic on server {index}/{len(servers)}: {server_name}...", flush=True)
         try:
-            result = scan_server_webapp_traffic(server, cutoff_epoch, datetime.now().timestamp())
+            result = scan_server_webapp_traffic(server, cutoff_epoch, now_epoch)
         except RuntimeError as exc:
             print(f"  [ERROR] {server_name}: {exc}")
             continue
