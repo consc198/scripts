@@ -1088,7 +1088,7 @@ def main():
                 })
 
     if args.add_missing_dmarc:
-        print("\\nCloudflare DMARC setup: checking missing Mailgun DMARC records...", file=sys.stderr)
+        print("\nCloudflare DMARC setup: checking missing Mailgun DMARC records...", file=sys.stderr)
         for row in results:
             row["dmarc_cloudflare_action"] = ""
             if row.get("dmarc") != "FAIL":
@@ -1102,7 +1102,7 @@ def main():
                 )
             except (ValueError, RuntimeError) as exc:
                 row["dmarc_cloudflare_action"] = "FAILED: " + str(exc)
-        print("\\nDMARC RECORD CONFIGURATION")
+        print("\nDMARC RECORD CONFIGURATION")
         columns = [
             ("DOMAIN", "domain"),
             ("RESULT", "dmarc_cloudflare_action"),
