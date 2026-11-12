@@ -1,8 +1,8 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.24`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.25`** · Read-only audit utility for Mailgun sending domains.
 
-The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings or DNS records.
+The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings. DNS changes are only made when the explicit `--add-missing-dmarc` option is supplied.
 
 ## Features
 
@@ -54,7 +54,7 @@ export MAILGUN_AUDIT_CSV='mailgun_domain_audit.csv'
 
 The DNS/DMARC audit also checks Cloudflare zones. Create `cloudflare_apikey.txt` beside the script and put a **Cloudflare API token** on one line. The token needs permission to read zones (typically the `Zone:Read` permission) and must include the zones you want to audit. This is a Cloudflare API token, not the account's Global API Key.
 
-The audit fetches all zone pages from the Cloudflare API using `curl --ipv4`, so Cloudflare requests use IPv4 even when the machine has IPv6 connectivity issues. It removes a leading `mg.` or `mgn.` from Mailgun domain names before matching; for example, `mg.huisvoorgezondheid.be` is checked against the Cloudflare zone `huisvoorgezondheid.be`. It also ignores case, trailing dots, and a leading `www.`. A domain is marked `Found` if it exactly matches a zone or is a subdomain covered by that zone; otherwise it is marked `Missing`.
+The audit fetches all zone pages from the Cloudflare API using `curl --ipv4`, so Cloudflare requests use IPv4 even when the machine has IPv6 connectivity issues. For the optional DMARC creation mode, the token also needs `Zone:Read`, `DNS:Read`, and `DNS:Edit` permissions. It removes a leading `mg.` or `mgn.` from Mailgun domain names before matching; for example, `mg.huisvoorgezondheid.be` is checked against the Cloudflare zone `huisvoorgezondheid.be`. It also ignores case, trailing dots, and a leading `www.`. A domain is marked `Found` if it exactly matches a zone or is a subdomain covered by that zone; otherwise it is marked `Missing`.
 
 If the token is absent or Cloudflare cannot be queried, the audit stops with an error rather than marking every domain as `Missing` based on an incomplete lookup. The token file is ignored by Git.
 
@@ -68,7 +68,15 @@ Compare Mailgun domains against RunCloud without running the DNS/DMARC audit:
 python3 mailgun_domain_audit.py --runcloud-check
 ```
 
-The script still retrieves the Mailgun domain list for comparison, but skips per-domain DNS and DMARC requests. To run both checks in one invocation, use:
+The script still retrieves the Mailgun domain list for comparison, but skips per-domain DNS and DMARC requests. You can explicitly create missing DMARC records for domains covered by Cloudflare by adding `--add-missing-dmarc` to the DNS audit:
+
+```bash
+python3 mailgun_domain_audit.py --dns-check --add-missing-dmarc
+```
+
+This mode uses Mailgun's expected DMARC value and creates a TXT record at `_dmarc.<mailgun-domain>` only when Mailgun reports DMARC as missing and the domain is covered by a Cloudflare zone. It checks Cloudflare first and never overwrites an existing TXT or CNAME record at that name. Existing records are reported as `ALREADY_EXISTS`; domains outside Cloudflare are reported as `NOT_IN_CLOUDFLARE`; invalid or unavailable Mailgun values are not published. Creation outcomes are shown in the terminal and in the DNS audit CSV under `dmarc_cloudflare_action`. The regular DNS audit remains read-only unless this flag is explicitly supplied. After a record is created, run the DNS audit again later to let Mailgun re-check it; DNS propagation can take time, and Mailgun's DNS page provides a manual **Check status** action if verification remains stale.
+
+To run both checks in one invocation, use:
 
 ```bash
 python3 mailgun_domain_audit.py --dns-check --runcloud-check
