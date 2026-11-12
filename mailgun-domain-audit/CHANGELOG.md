@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/) where practical and uses the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
+## [0.3.25] - 2026-11-12
+
+### Added
+- Add explicit `--add-missing-dmarc` mode to create missing Mailgun-provided DMARC TXT records in Cloudflare, only when no DNS record already exists at the `_dmarc` name.
+- Report per-domain DMARC DNS creation outcomes in the terminal and audit CSV; normal DNS audits remain read-only unless the new flag is supplied.
+
 ## [0.3.24] - 2026-11-09
 
 ### Changed
