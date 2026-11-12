@@ -1,13 +1,13 @@
 # Mailgun Domain Audit
 
-**Current version: `0.3.25`** · Read-only audit utility for Mailgun sending domains.
+**Current version: `0.3.26`** · Read-only audit utility for Mailgun sending domains.
 
-The tool inventories domains in a Mailgun account and writes a CSV report with available Mailgun DNS verification and DMARC information. It does not modify Mailgun settings. DNS changes are only made when the explicit `--add-missing-dmarc` option is supplied.
+The tool inventories domains in a Mailgun account and writes a CSV report with fresh Mailgun DNS verification and DMARC information. During `--dns-check`, it triggers Mailgun's domain verification endpoint for each domain; this refreshes Mailgun's DNS status but does not change domain configuration. DNS changes are only made when the explicit `--add-missing-dmarc` option is supplied.
 
 ## Features
 
 - Lists domains from the Mailgun Domains API.
-- Explicitly requests Mailgun domain DNS records and checks SPF/DKIM-related verification data.
+- Triggers Mailgun's `PUT /v4/domains/{name}/verify` endpoint for each domain, then classifies the returned sending DNS record statuses (including SPF, DKIM, and tracking). Mailgun's verification also checks A, CNAME, SPF, DKIM, and MX records; DMARC is checked separately through the Mailgun DMARC endpoint.
 - Checks DMARC using the Mailgun DMARC records endpoint.
 - Checks whether each normalized Mailgun domain is covered by a zone in your Cloudflare account and adds a `Cloudflare` column (`Found` or `Missing`) after `Status` in the audit CSV.
 - Exports results to CSV.
@@ -64,7 +64,7 @@ You can explicitly create missing DMARC records for domains covered by Cloudflar
 python3 mailgun_domain_audit.py --dns-check --add-missing-dmarc
 ```
 
-This mode uses Mailgun's expected DMARC value and creates a TXT record at `_dmarc.<mailgun-domain>` only when Mailgun reports DMARC as missing and the domain is covered by a Cloudflare zone. It checks Cloudflare first and never overwrites any existing DNS record at that name. Existing records are reported as `ALREADY_EXISTS`; domains outside Cloudflare are reported as `NOT_IN_CLOUDFLARE`; invalid or unavailable Mailgun values are not published. Creation outcomes are shown in the terminal and in the DNS audit CSV under `dmarc_cloudflare_action`. The regular DNS audit remains read-only unless this flag is explicitly supplied. After a record is created, run the DNS audit again later to let Mailgun re-check it; DNS propagation can take time, and Mailgun's DNS page provides a manual **Check status** action if verification remains stale.
+This mode uses Mailgun's expected DMARC value and creates a TXT record at `_dmarc.<mailgun-domain>` only when Mailgun reports DMARC as missing and the domain is covered by a Cloudflare zone. It checks Cloudflare first and never overwrites any existing DNS record at that name. Existing records are reported as `ALREADY_EXISTS`; domains outside Cloudflare are reported as `NOT_IN_CLOUDFLARE`; invalid or unavailable Mailgun values are not published. Creation outcomes are shown in the terminal and in the DNS audit CSV under `dmarc_cloudflare_action`. The regular DNS audit remains read-only unless this flag is explicitly supplied. After a record is created, run the DNS audit again to trigger Mailgun's DNS verification endpoint; DNS propagation can still take time.
 
 ### Optional RunCloud comparison
 
@@ -160,4 +160,4 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Safety
 
-This utility is read-only with respect to Mailgun configuration and DNS. Treat generated CSV files as operational data; review them before sharing.
+This utility does not modify Mailgun domain configuration or DNS during a normal audit. It does trigger Mailgun's DNS verification endpoint, which refreshes Mailgun's recorded DNS status. The optional `--add-missing-dmarc` mode can create DNS records in Cloudflare. Treat generated CSV files as operational data; review them before sharing.
