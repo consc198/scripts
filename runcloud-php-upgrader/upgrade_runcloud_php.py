@@ -7,6 +7,8 @@ The token file is intentionally ignored by Git. API calls are made with curl.
 
 import argparse
 import json
+import ipaddress
+import shlex
 from datetime import datetime, timedelta
 import re
 import shutil
@@ -15,7 +17,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-VERSION = "1.9.1"
+VERSION = "1.10.0"
 BASE_URL = "https://manage.runcloud.io/api/v3"
 DEFAULT_SOURCE_PHP = ["php80rc", "php81rc"]
 DEFAULT_TARGET_PHP = "php82rc"
@@ -352,6 +354,145 @@ def scan_server_max_children_logs(server):
     return hits
 
 
+def scan_server_webapp_traffic(server, cutoff_epoch):
+    """Count client IPs in the last 48 hours across this server's RunCloud Nginx access logs."""
+    server_name = server.get("name", str(server.get("id", "unknown")))
+    server_ip = get_server_ip(server)
+    if not server_ip:
+        raise RuntimeError("No server IP address was present in the RunCloud server record.")
+
+    remote_script = r"""
+import glob
+import ipaddress
+import json
+import os
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+cutoff = float(sys.argv[1])
+pattern = re.compile(r'^(\\S+)\\s+\\S+\\s+\\S+\\s+\\[([^]]+)\\]')
+counts = {}
+files_scanned = 0
+lines_scanned = 0
+for filename in glob.glob('/home/*/logs/nginx/*_access.log'):
+    try:
+        handle = open(filename, 'r', encoding='utf-8', errors='replace')
+    except OSError:
+        continue
+    files_scanned += 1
+    webapp = Path(filename).name[:-len('_access.log')]
+    with handle:
+        for line in handle:
+            lines_scanned += 1
+            match = pattern.match(line)
+            if not match:
+                continue
+            ip_text, timestamp_text = match.groups()
+            try:
+                address = str(ipaddress.ip_address(ip_text))
+                event_time = datetime.strptime(timestamp_text, '%d/%b/%Y:%H:%M:%S %z').timestamp()
+            except (ValueError, OverflowError):
+                continue
+            if event_time < cutoff:
+                continue
+            item = counts.setdefault(address, {'requests': 0, 'webapps': set()})
+            item['requests'] += 1
+            item['webapps'].add(webapp)
+
+print(json.dumps({
+    'files_scanned': files_scanned,
+    'lines_scanned': lines_scanned,
+    'ips': {
+        ip: {'requests': item['requests'], 'webapps': sorted(item['webapps'])}
+        for ip, item in counts.items()
+    }
+}))
+"""
+    remote_command = f"python3 -c {shlex.quote(remote_script)} {cutoff_epoch:.3f}"
+    command = [
+        "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+        "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2",
+        f"root@{server_ip}", remote_command,
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=240, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"SSH traffic audit failed: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"ssh exited with status {result.returncode}"
+        raise RuntimeError(detail[:500])
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Remote traffic scanner returned invalid JSON.") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("ips"), dict):
+        raise RuntimeError("Remote traffic scanner returned an unexpected result.")
+    return payload
+
+
+def run_webapp_traffic_audit(servers):
+    """Aggregate the busiest client IPs across all selected servers' webapp logs."""
+    cutoff_epoch = datetime.now().timestamp() - (48 * 60 * 60)
+    cutoff_text = datetime.fromtimestamp(cutoff_epoch).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    totals = {}
+    files_scanned = lines_scanned = successful_servers = 0
+
+    print(f"\nAuditing Nginx webapp access logs from the last 48 hours (since {cutoff_text})...")
+    for index, server in enumerate(servers, 1):
+        server_name = server.get("name", str(server.get("id", "unknown")))
+        print(f"Scanning traffic on server {index}/{len(servers)}: {server_name}...", flush=True)
+        try:
+            result = scan_server_webapp_traffic(server, cutoff_epoch)
+        except RuntimeError as exc:
+            print(f"  [ERROR] {server_name}: {exc}")
+            continue
+
+        successful_servers += 1
+        files_scanned += int(result.get("files_scanned", 0))
+        lines_scanned += int(result.get("lines_scanned", 0))
+        server_id = str(server.get("id", ""))
+        for ip, details in result["ips"].items():
+            item = totals.setdefault(ip, {"requests": 0, "webapps": set(), "servers": set()})
+            item["requests"] += int(details.get("requests", 0))
+            item["servers"].add(server_id)
+            for webapp in details.get("webapps", []):
+                item["webapps"].add((server_id, webapp))
+        print(
+            f"  Scanned {result.get('files_scanned', 0)} access log(s), "
+            f"{result.get('lines_scanned', 0)} line(s), "
+            f"{len(result['ips'])} IP(s) with recent traffic."
+        )
+
+    ranked = sorted(
+        totals.items(),
+        key=lambda pair: (-pair[1]["requests"], ipaddress.ip_address(pair[0]).version, ipaddress.ip_address(pair[0])),
+    )[:20]
+
+    print("\n--- Top 20 client IPs across all webapps (last 48 hours) ---")
+    if not ranked:
+        print("No valid client IP requests were found in the scanned access logs during the last 48 hours.")
+    else:
+        headers = ("RANK", "CLIENT IP", "REQUESTS", "WEBAPPS", "SERVERS")
+        values = [
+            (str(index), ip, str(data["requests"]), str(len(data["webapps"])), str(len(data["servers"])))
+            for index, (ip, data) in enumerate(ranked, 1)
+        ]
+        widths = [max(len(headers[i]), *(len(row[i]) for row in values)) for i in range(len(headers))]
+        print("  ".join(headers[i].ljust(widths[i]) for i in range(len(headers))))
+        print("  ".join("-" * widths[i] for i in range(len(headers))))
+        for row in values:
+            print("  ".join(row[i].ljust(widths[i]) for i in range(len(headers))))
+        print(f"\nTotal requests from the top 20 IPs: {sum(data['requests'] for _, data in ranked):,}")
+        print(f"Unique client IPs found: {len(totals):,}")
+
+    print(f"Servers scanned successfully: {successful_servers}/{len(servers)}")
+    print(f"Nginx access log files scanned: {files_scanned:,}")
+    print(f"Log lines examined: {lines_scanned:,}")
+    print("Read-only audit; no server files or settings were changed.")
+
+
 def normalize_pool_name(value):
     """Normalize pool and webapp labels for conservative exact matching."""
     return re.sub(r"[^a-z0-9]", "", str(value).lower())
@@ -561,6 +702,10 @@ def main():
         help="List webapps running this PHP version and show their detected app type; makes no changes.",
     )
     parser.add_argument(
+        "--audit-webapp-traffic", action="store_true",
+        help="Rank the top 20 client IPs across all webapp Nginx access logs from the last 48 hours.",
+    )
+    parser.add_argument(
         "--scan-max-children", action="store_true",
         help="SSH to every selected server and report PHP-FPM max_children limit warnings.",
     )
@@ -594,6 +739,8 @@ def main():
         args.scan_max_children = True
         if args.update_pm_max_children or args.update_php_cli or args.only_php_cli or args.list_apps_php:
             parser.error("--update-hit-max-children cannot be combined with other update or inventory modes.")
+    if args.audit_webapp_traffic and (args.scan_max_children or args.update_hit_max_children or args.update_pm_max_children or args.update_php_cli or args.only_php_cli or args.list_apps_php or args.apply):
+        parser.error("--audit-webapp-traffic is a read-only mode and cannot be combined with other scan or update modes.")
     if args.scan_max_children and (args.update_pm_max_children or args.update_php_cli or args.only_php_cli or args.list_apps_php):
         parser.error("--scan-max-children cannot be combined with PHP-version, PHP-CLI, or inventory update modes.")
     if args.update_pm_max_children:
@@ -644,8 +791,8 @@ def main():
                 selected_server_id = int(args.server_id)
             except ValueError:
                 parser.error("--server-id must be an integer.")
-            if args.scan_max_children:
-                # Log scanning needs the server IP, so retain the full API server record.
+            if args.scan_max_children or args.audit_webapp_traffic:
+                # SSH log audits need the server IP, so retain the full API server record.
                 servers = [
                     server for server in get_all_pages(token, "/servers")
                     if int(server.get("id", -1)) == selected_server_id
@@ -698,6 +845,10 @@ def main():
             else:
                 print(f"No webapps found using {args.list_apps_php}.")
             print("App type is inferred from available API metadata and paths; 'Unknown' means the API response did not provide enough clues.")
+            return
+
+        if args.audit_webapp_traffic:
+            run_webapp_traffic_audit(servers)
             return
 
         if args.scan_max_children:
