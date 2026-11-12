@@ -445,12 +445,11 @@ def ensure_cloudflare_dmarc_record(domain, expected_value, zones, token):
     if not isinstance(records, list):
         raise ValueError("Unexpected Cloudflare DNS response: 'result' is not a list")
 
-    # Preserve any existing record at _dmarc, including CNAMEs or non-DMARC TXT
-    # records; never overwrite or create a conflicting DNS name.
+    # Preserve any existing record at _dmarc; never overwrite or create a
+    # conflicting DNS name, regardless of its current record type.
     for record in records:
         if isinstance(record, dict) and str(record.get("name", "")).lower().rstrip(".") == record_name:
-            if str(record.get("type", "")).upper() in {"TXT", "CNAME"}:
-                return "ALREADY_EXISTS"
+            return "ALREADY_EXISTS"
 
     create_url = f"{CLOUDFLARE_BASE_URL}/zones/{quote(zone_id, safe='')}/dns_records"
     cloudflare_get_json(
@@ -1035,7 +1034,7 @@ def main():
     print(f"Mailgun API base: {BASE_URL}", file=sys.stderr)
     if args.delete_domains:
         if args.dns_check or args.runcloud_check or args.add_missing_dmarc:
-            print("ERROR: --delete-domains must be used by itself, not with --dns-check or --runcloud-check.", file=sys.stderr)
+            print("ERROR: --delete-domains must be used by itself, not with audit or DNS-write options.", file=sys.stderr)
             return 2
         try:
             domains_to_delete = load_domains_to_delete(args.delete_domains)
