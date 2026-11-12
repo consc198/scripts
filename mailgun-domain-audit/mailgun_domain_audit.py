@@ -374,7 +374,7 @@ def cloudflare_zone_status(domain, zones):
     return "Missing"
 
 
-def cloudflare_get_json(url, token):
+def cloudflare_get_json(url, token, method='GET', data=None):
     """GET a Cloudflare API URL over IPv4, keeping the token out of argv."""
     def curl_quote(value):
         return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "") + '"'
@@ -385,6 +385,9 @@ def cloudflare_get_json(url, token):
         f"url = {curl_quote(url)}",
         f"header = {curl_quote('Accept: application/json')}",
         f"header = {curl_quote(f'Authorization: Bearer {token}')}",
+        *([f"header = {curl_quote('Content-Type: application/json')}",
+           f"request = {curl_quote(method)}",
+           f"data = {curl_quote(json.dumps(data))}"] if data is not None else []),
         'write-out = "\\nHTTPSTATUS:%{http_code}"',
         "",
     ])
@@ -413,6 +416,55 @@ def cloudflare_get_json(url, token):
     if payload.get("success") is not True:
         raise RuntimeError(f"Cloudflare API reported an unsuccessful response: {payload.get('errors', [])}")
     return payload
+
+
+def cloudflare_zone_for_domain(domain, zones):
+    """Find the most specific Cloudflare zone covering a fully qualified name."""
+    normalized = str(domain).strip().lower().rstrip(".")
+    matches = [(zone, zone_id) for zone, zone_id in zones.items()
+               if normalized == zone or normalized.endswith("." + zone)]
+    return max(matches, key=lambda item: len(item[0])) if matches else (None, None)
+
+
+def ensure_cloudflare_dmarc_record(domain, expected_value, zones, token):
+    """Create a DMARC TXT record only when no TXT/CNAME record exists at _dmarc."""
+    domain = str(domain).strip().lower().rstrip(".")
+    if not isinstance(expected_value, str) or not expected_value.strip().lower().startswith("v=dmarc1"):
+        return "NO_VALID_MAILGUN_RECORD"
+
+    zone, zone_id = cloudflare_zone_for_domain(domain, zones)
+    if not zone_id:
+        return "NOT_IN_CLOUDFLARE"
+
+    record_name = "_dmarc." + domain
+    records_url = (
+        f"{CLOUDFLARE_BASE_URL}/zones/{quote(zone_id, safe='')}/dns_records"
+        f"?name={quote(record_name, safe='')}&per_page=100"
+    )
+    records = cloudflare_get_json(records_url, token).get("result", [])
+    if not isinstance(records, list):
+        raise ValueError("Unexpected Cloudflare DNS response: 'result' is not a list")
+
+    # Preserve any existing record at _dmarc, including CNAMEs or non-DMARC TXT
+    # records; never overwrite or create a conflicting DNS name.
+    for record in records:
+        if isinstance(record, dict) and str(record.get("name", "")).lower().rstrip(".") == record_name:
+            if str(record.get("type", "")).upper() in {"TXT", "CNAME"}:
+                return "ALREADY_EXISTS"
+
+    create_url = f"{CLOUDFLARE_BASE_URL}/zones/{quote(zone_id, safe='')}/dns_records"
+    cloudflare_get_json(
+        create_url,
+        token,
+        method="POST",
+        data={
+            "type": "TXT",
+            "name": record_name,
+            "content": expected_value.strip(),
+            "ttl": 1,
+        },
+    )
+    return "CREATED"
 
 
 def get_cloudflare_a_record(domain, zones, token):
@@ -947,6 +999,11 @@ def main():
         help="run the Mailgun SPF, DKIM, and DMARC audit",
     )
     parser.add_argument(
+        "--add-missing-dmarc",
+        action="store_true",
+        help="create missing Mailgun DMARC TXT records in Cloudflare (requires --dns-check)",
+    )
+    parser.add_argument(
         "--runcloud-check",
         action="store_true",
         help="compare Mailgun domains with domains configured in RunCloud (without DNS audit unless --dns-check is also supplied)",
@@ -957,6 +1014,8 @@ def main():
         help="delete only the Mailgun domains listed in FILE, after an explicit confirmation",
     )
     args = parser.parse_args()
+    if args.add_missing_dmarc and not args.dns_check:
+        parser.error("--add-missing-dmarc requires --dns-check")
     # Preserve the historical default: with no check flags, run the DNS audit.
     # When --runcloud-check is used alone, skip per-domain DNS/DMARC requests.
     run_dns_check = args.dns_check or not args.runcloud_check
@@ -975,7 +1034,7 @@ def main():
 
     print(f"Mailgun API base: {BASE_URL}", file=sys.stderr)
     if args.delete_domains:
-        if args.dns_check or args.runcloud_check:
+        if args.dns_check or args.runcloud_check or args.add_missing_dmarc:
             print("ERROR: --delete-domains must be used by itself, not with --dns-check or --runcloud-check.", file=sys.stderr)
             return 2
         try:
@@ -1028,6 +1087,37 @@ def main():
                     "dmarc_error": str(exc),
                 })
 
+    if args.add_missing_dmarc:
+        print("\\nCloudflare DMARC setup: checking missing Mailgun DMARC records...", file=sys.stderr)
+        for row in results:
+            row["dmarc_cloudflare_action"] = ""
+            if row.get("dmarc") != "FAIL":
+                continue
+            if row.get("Cloudflare") != "Found":
+                row["dmarc_cloudflare_action"] = "NOT_IN_CLOUDFLARE"
+                continue
+            try:
+                row["dmarc_cloudflare_action"] = ensure_cloudflare_dmarc_record(
+                    row["domain"], row.get("dmarc_expected", ""), cloudflare_zones, cloudflare_token
+                )
+            except (ValueError, RuntimeError) as exc:
+                row["dmarc_cloudflare_action"] = "FAILED: " + str(exc)
+        print("\\nDMARC RECORD CONFIGURATION")
+        columns = [
+            ("DOMAIN", "domain"),
+            ("RESULT", "dmarc_cloudflare_action"),
+        ]
+        applicable = [row for row in results if row.get("dmarc_cloudflare_action")]
+        widths = {
+            header: max([len(header)] + [len(str(row.get(key, ""))) for row in applicable])
+            for header, key in columns
+        }
+        print("  ".join(header.ljust(widths[header]) for header, _ in columns))
+        print("  ".join("-" * widths[header] for header, _ in columns))
+        for row in applicable:
+            print("  ".join(str(row.get(key, "")).ljust(widths[header])
+                             for header, key in columns))
+
     if args.runcloud_check:
         runcloud_token = load_runcloud_api_key()
         if not runcloud_token:
@@ -1079,6 +1169,7 @@ def main():
         fields = [
             "domain", "mailgun_state", "spf", "dkim", "tracking", "dmarc",
             "status", "Cloudflare", "dmarc_current", "dmarc_expected", "dmarc_error",
+            "dmarc_cloudflare_action",
         ]
         with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=fields)
@@ -1094,6 +1185,7 @@ def main():
             ("DMARC", "dmarc"),
             ("STATUS", "status"),
             ("CLOUDFLARE", "Cloudflare"),
+            *([("DMARC DNS ACTION", "dmarc_cloudflare_action")] if args.add_missing_dmarc else []),
         ]
         widths = {
             header: max(
