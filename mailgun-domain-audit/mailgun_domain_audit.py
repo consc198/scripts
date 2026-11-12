@@ -980,7 +980,7 @@ def read_version():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Read-only audit of Mailgun domain DNS authentication.")
+    parser = argparse.ArgumentParser(description="Audit Mailgun DNS authentication; optionally create missing DMARC records in Cloudflare.")
     try:
         version = read_version()
     except RuntimeError as exc:
