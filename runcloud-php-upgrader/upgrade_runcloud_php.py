@@ -354,7 +354,7 @@ def scan_server_max_children_logs(server):
     return hits
 
 
-def scan_server_webapp_traffic(server, cutoff_epoch):
+def scan_server_webapp_traffic(server, cutoff_epoch, now_epoch):
     """Count client IPs in the last 48 hours across this server's RunCloud Nginx access logs."""
     server_name = server.get("name", str(server.get("id", "unknown")))
     server_ip = get_server_ip(server)
@@ -372,6 +372,7 @@ from datetime import datetime
 from pathlib import Path
 
 cutoff = float(sys.argv[1])
+now = float(sys.argv[2])
 pattern = re.compile(r'^(\\S+)\\s+\\S+\\s+\\S+\\s+\\[([^]]+)\\]')
 counts = {}
 files_scanned = 0
@@ -395,7 +396,7 @@ for filename in glob.glob('/home/*/logs/nginx/*_access.log'):
                 event_time = datetime.strptime(timestamp_text, '%d/%b/%Y:%H:%M:%S %z').timestamp()
             except (ValueError, OverflowError):
                 continue
-            if event_time < cutoff:
+            if event_time < cutoff or event_time > now:
                 continue
             item = counts.setdefault(address, {'requests': 0, 'webapps': set()})
             item['requests'] += 1
@@ -410,7 +411,7 @@ print(json.dumps({
     }
 }))
 """
-    remote_command = f"python3 -c {shlex.quote(remote_script)} {cutoff_epoch:.3f}"
+    remote_command = f"python3 -c {shlex.quote(remote_script)} {cutoff_epoch:.3f} {datetime.now().timestamp():.3f}"
     command = [
         "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
         "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2",
@@ -444,7 +445,7 @@ def run_webapp_traffic_audit(servers):
         server_name = server.get("name", str(server.get("id", "unknown")))
         print(f"Scanning traffic on server {index}/{len(servers)}: {server_name}...", flush=True)
         try:
-            result = scan_server_webapp_traffic(server, cutoff_epoch)
+            result = scan_server_webapp_traffic(server, cutoff_epoch, datetime.now().timestamp())
         except RuntimeError as exc:
             print(f"  [ERROR] {server_name}: {exc}")
             continue
@@ -739,7 +740,7 @@ def main():
         args.scan_max_children = True
         if args.update_pm_max_children or args.update_php_cli or args.only_php_cli or args.list_apps_php:
             parser.error("--update-hit-max-children cannot be combined with other update or inventory modes.")
-    if args.audit_webapp_traffic and (args.scan_max_children or args.update_hit_max_children or args.update_pm_max_children or args.update_php_cli or args.only_php_cli or args.list_apps_php or args.apply):
+    if args.audit_webapp_traffic and (args.scan_max_children or args.update_hit_max_children or args.update_pm_max_children or args.update_php_cli or args.only_php_cli or args.list_apps_php or args.apply or args.webapps_file):
         parser.error("--audit-webapp-traffic is a read-only mode and cannot be combined with other scan or update modes.")
     if args.scan_max_children and (args.update_pm_max_children or args.update_php_cli or args.only_php_cli or args.list_apps_php):
         parser.error("--scan-max-children cannot be combined with PHP-version, PHP-CLI, or inventory update modes.")
