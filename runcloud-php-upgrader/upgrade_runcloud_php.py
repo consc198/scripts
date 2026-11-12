@@ -363,6 +363,7 @@ def scan_server_webapp_traffic(server, cutoff_epoch, now_epoch):
 
     remote_script = r"""
 import glob
+import gzip
 import ipaddress
 import json
 import os
@@ -377,13 +378,22 @@ pattern = re.compile(r'^(\\S+)\\s+\\S+\\s+\\S+\\s+\\[([^]]+)\\]')
 counts = {}
 files_scanned = 0
 lines_scanned = 0
-for filename in glob.glob('/home/*/logs/nginx/*_access.log'):
+filenames = set(glob.glob('/home/*/logs/nginx/*_access.log'))
+filenames.update(glob.glob('/home/*/logs/nginx/*_access.log-*.gz'))
+for filename in sorted(filenames):
+    is_compressed = filename.endswith('.gz')
     try:
-        handle = open(filename, 'r', encoding='utf-8', errors='replace')
+        if is_compressed and os.path.getmtime(filename) < cutoff:
+            continue
+        handle = (
+            gzip.open(filename, 'rt', encoding='utf-8', errors='replace')
+            if is_compressed
+            else open(filename, 'r', encoding='utf-8', errors='replace')
+        )
     except OSError:
         continue
     files_scanned += 1
-    webapp = Path(filename).name[:-len('_access.log')]
+    webapp = Path(filename).name.split('_access.log', 1)[0]
     with handle:
         for line in handle:
             lines_scanned += 1
@@ -411,7 +421,7 @@ print(json.dumps({
     }
 }))
 """
-    remote_command = f"python3 -c {shlex.quote(remote_script)} {cutoff_epoch:.3f} {datetime.now().timestamp():.3f}"
+    remote_command = f"python3 -c {shlex.quote(remote_script)} {cutoff_epoch:.3f} {now_epoch:.3f}"
     command = [
         "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
         "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2",
